@@ -13,14 +13,21 @@ from pathlib import Path
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
+# 百炼共享域名。控制台说明它自 2026-09-30 起进入维护，新工作空间密钥应改用专属域名。
+LEGACY_DASHSCOPE_HOST = "dashscope.aliyuncs.com"
+BEIJING_WORKSPACE_SUFFIX = ".cn-beijing.maas.aliyuncs.com"
+
 
 @dataclass(frozen=True)
 class Settings:
     """一次进程里用到的全部可调参数。做成不可变对象，避免通话中途被改掉。"""
 
     dashscope_api_key: str
+    dashscope_host: str
     dashscope_base_url: str
     dashscope_ws_url: str
+    # host / workspace_id / explicit / override / legacy。只给日志看，不参与请求。
+    dashscope_endpoint_source: str
     llm_model: str
     asr_model: str
     tts_model: str
@@ -65,6 +72,79 @@ def _int(env: dict[str, str], name: str, default: int) -> int:
     return int(raw)
 
 
+def normalize_dashscope_host(value: str) -> str:
+    """把控制台复制出来的地址收成主机名。
+
+    接受 `ws-xxx.cn-beijing.maas.aliyuncs.com`，也接受带 https:// 和路径的整段 URL。
+    """
+
+    text = value.strip()
+    lowered = text.lower()
+    for prefix in ("https://", "http://", "wss://", "ws://"):
+        if lowered.startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    text = text.split("/", 1)[0].strip()
+    if text.endswith(":443"):
+        text = text[: -len(":443")]
+    return text
+
+
+def workspace_id_to_host(workspace_id: str) -> str:
+    """`工作空间 ID` → `ws-<id>.cn-beijing.maas.aliyuncs.com`。
+
+    已经带 `ws-` 或已经是完整主机名时不再加一层。
+    """
+
+    ident = normalize_dashscope_host(workspace_id)
+    if not ident:
+        return ""
+    if "." in ident:
+        return ident
+    if ident.lower().startswith("ws-"):
+        ident = ident[3:]
+    return f"ws-{ident}{BEIJING_WORKSPACE_SUFFIX}"
+
+
+def resolve_dashscope_endpoint(env: dict[str, str]) -> tuple[str, str, str, str]:
+    """从一个主机名推出千问和语音两条地址。
+
+    优先级：显式的 `DASHSCOPE_BASE_URL` / `DASHSCOPE_WS_URL` 各自覆盖对应那一条。
+    主机名来自 `DASHSCOPE_HOST`，否则来自 `DASHSCOPE_WORKSPACE_ID`。
+    两个都空、显式地址也空时，退回维护中的共享域名。
+    """
+
+    explicit_base = _text(env, "DASHSCOPE_BASE_URL")
+    explicit_ws = _text(env, "DASHSCOPE_WS_URL")
+    host_raw = _text(env, "DASHSCOPE_HOST")
+    workspace_id = _text(env, "DASHSCOPE_WORKSPACE_ID")
+
+    host = ""
+    source = "legacy"
+    if host_raw:
+        host = normalize_dashscope_host(host_raw)
+        source = "host"
+    elif workspace_id:
+        host = workspace_id_to_host(workspace_id)
+        source = "workspace_id"
+
+    if host:
+        derived_base = f"https://{host}/compatible-mode/v1"
+        derived_ws = f"wss://{host}/api-ws/v1/inference"
+    else:
+        host = LEGACY_DASHSCOPE_HOST
+        derived_base = f"https://{LEGACY_DASHSCOPE_HOST}/compatible-mode/v1"
+        derived_ws = f"wss://{LEGACY_DASHSCOPE_HOST}/api-ws/v1/inference"
+
+    base_url = explicit_base or derived_base
+    ws_url = explicit_ws or derived_ws
+    if explicit_base or explicit_ws:
+        source = "override" if source in {"host", "workspace_id"} else "explicit"
+        if not host_raw and not workspace_id:
+            host = normalize_dashscope_host(explicit_base or explicit_ws) or host
+    return host, base_url, ws_url, source
+
+
 def load_settings(env: dict[str, str] | None = None) -> Settings:
     """读取配置。测试可以传入字典，避免碰真正的环境变量。"""
 
@@ -75,18 +155,13 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         "stun:stun.qq.com:3478,stun:stun.miwifi.com:3478",
     )
     ice = tuple(item.strip() for item in ice_raw.split(",") if item.strip())
+    dash_host, dash_base, dash_ws, dash_source = resolve_dashscope_endpoint(source)
     return Settings(
         dashscope_api_key=_text(source, "DASHSCOPE_API_KEY"),
-        dashscope_base_url=_text(
-            source,
-            "DASHSCOPE_BASE_URL",
-            "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        ),
-        dashscope_ws_url=_text(
-            source,
-            "DASHSCOPE_WS_URL",
-            "wss://dashscope.aliyuncs.com/api-ws/v1/inference",
-        ),
+        dashscope_host=dash_host,
+        dashscope_base_url=dash_base,
+        dashscope_ws_url=dash_ws,
+        dashscope_endpoint_source=dash_source,
         llm_model=_text(source, "DASHSCOPE_LLM_MODEL", "qwen-plus"),
         asr_model=_text(source, "DASHSCOPE_ASR_MODEL", "paraformer-realtime-v2"),
         tts_model=_text(source, "DASHSCOPE_TTS_MODEL", "cosyvoice-v2"),
@@ -104,9 +179,31 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
     )
 
 
+def uses_legacy_dashscope_domain(settings: Settings) -> bool:
+    return LEGACY_DASHSCOPE_HOST in settings.dashscope_base_url or (
+        LEGACY_DASHSCOPE_HOST in settings.dashscope_ws_url
+    )
+
+
+def legacy_domain_warning() -> str:
+    return (
+        "当前百炼地址是 dashscope.aliyuncs.com。"
+        "控制台说明该域名自 2026-09-30 起进入维护，新的工作空间密钥（sk-ws- 开头）"
+        "应改填 DASHSCOPE_HOST，形如 ws-<工作空间ID>.cn-beijing.maas.aliyuncs.com。"
+        "填了主机名之后，不要再留着旧的 DASHSCOPE_BASE_URL / DASHSCOPE_WS_URL，否则会盖住它。"
+    )
+
+
 def status_payload(settings: Settings) -> dict:
     """给网页和健康检查用。只说明密钥在不在，不去联网验证。"""
 
+    endpoint = {
+        "dashscope_host": settings.dashscope_host,
+        "dashscope_base_url": settings.dashscope_base_url,
+        "dashscope_ws_url": settings.dashscope_ws_url,
+        "dashscope_endpoint_source": settings.dashscope_endpoint_source,
+        "ice_servers": list(settings.ice_servers),
+    }
     missing = settings.missing_keys
     if missing:
         return {
@@ -114,16 +211,22 @@ def status_payload(settings: Settings) -> dict:
             "missing": missing,
             "message": (
                 "还没有配置 DASHSCOPE_API_KEY。"
-                "请把 .env.example 复制为 .env，填入阿里云百炼的 API Key，然后重新启动。"
-                "获取方式写在 README 的「如何获取 DashScope 密钥」。"
+                "请把 .env.example 复制为 .env，填入阿里云百炼的 API Key 和 DASHSCOPE_HOST，然后重新启动。"
+                "Windows 步骤见 docs/windows-quickstart.md。"
             ),
-            "ice_servers": list(settings.ice_servers),
+            **endpoint,
         }
+    message = (
+        f"已读到 DASHSCOPE_API_KEY，请求将发往 {settings.dashscope_host}。"
+        "密钥是否被这个域名接受，要等第一次请求才会知道。"
+    )
+    if uses_legacy_dashscope_domain(settings):
+        message = f"{message} {legacy_domain_warning()}"
     return {
         "ok": True,
         "missing": [],
-        "message": "已读到 DASHSCOPE_API_KEY，可以开始通话。密钥是否有效要等第一次请求才会知道。",
-        "ice_servers": list(settings.ice_servers),
+        "message": message,
+        **endpoint,
     }
 
 

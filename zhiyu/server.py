@@ -25,7 +25,14 @@ from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
 )
 
-from zhiyu.config import Settings, load_persona, load_settings, status_payload
+from zhiyu.config import (
+    Settings,
+    legacy_domain_warning,
+    load_persona,
+    load_settings,
+    status_payload,
+    uses_legacy_dashscope_domain,
+)
 from zhiyu.session import SessionHub
 from zhiyu.transport.bot import run_bot
 
@@ -44,7 +51,17 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
         if not settings.credentials_ready:
             logger.warning(status_payload(settings)["message"])
         else:
-            logger.info("已读到 DASHSCOPE_API_KEY，模型 {} / {} / {}", settings.llm_model, settings.asr_model, settings.tts_model)
+            logger.info(
+                "已读到 DASHSCOPE_API_KEY，模型 {} / {} / {}，发往 {}（{}）",
+                settings.llm_model,
+                settings.asr_model,
+                settings.tts_model,
+                settings.dashscope_host,
+                settings.dashscope_endpoint_source,
+            )
+            logger.info("千问 {} | 语音 {}", settings.dashscope_base_url, settings.dashscope_ws_url)
+            if uses_legacy_dashscope_domain(settings):
+                logger.warning(legacy_domain_warning())
         if preload_vad:
             _preload_silero()
         yield

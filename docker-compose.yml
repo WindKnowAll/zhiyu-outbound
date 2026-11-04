@@ -11,8 +11,12 @@ services:
       HOST: 0.0.0.0
       PORT: "7860"
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
-      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
-      DASHSCOPE_WS_URL: ${DASHSCOPE_WS_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/inference}
+      # 空着就交给程序：有 DASHSCOPE_HOST 就用专属域名，否则才退回共享域名。
+      # 不要在这里写死 dashscope.aliyuncs.com，否则会盖住 .env 里的主机名。
+      DASHSCOPE_HOST: ${DASHSCOPE_HOST:-}
+      DASHSCOPE_WORKSPACE_ID: ${DASHSCOPE_WORKSPACE_ID:-}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-}
+      DASHSCOPE_WS_URL: ${DASHSCOPE_WS_URL:-}
       DASHSCOPE_LLM_MODEL: ${DASHSCOPE_LLM_MODEL:-qwen-plus}
       DASHSCOPE_ASR_MODEL: ${DASHSCOPE_ASR_MODEL:-paraformer-realtime-v2}
       DASHSCOPE_TTS_MODEL: ${DASHSCOPE_TTS_MODEL:-cosyvoice-v2}

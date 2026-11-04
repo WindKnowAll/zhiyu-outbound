@@ -4,6 +4,8 @@
 
 场景是虚构的「星河大学图书馆」：助手小语打电话确认预约的书到馆了。这是竞赛演示，不索要验证码、密码或银行卡。
 
+Windows 11 从安装 Python 到打开麦克风，按 [docs/windows-quickstart.md](docs/windows-quickstart.md) 做。连通性自检是 `python scripts/smoke_test.py`。
+
 ## 为什么用这套
 
 | 选择 | 原因 |
@@ -111,7 +113,9 @@ sequenceDiagram
 | TTS 首包 | 第一个字 → 第一块 PCM（开场白则从「开始合成」算） |
 | 端到端首包 | VAD 认为说完 → 第一块 PCM |
 
-目标是端到端首包大约 2 秒以内。预算大致是：静音确认 0.2 秒 + 等定稿最多 0.35 秒 + 千问首 token + CosyVoice 第一句。没有真实密钥时，这个数字没法在这里测出来。网页上「本轮耗时」和日志是同一组数。
+通话里的端到端首包大致是：静音确认 0.2 秒 + 等定稿最多 0.35 秒 + 千问首 token + CosyVoice 第一句。网页上「本轮耗时」和日志是同一次通话的数字。
+
+只想先看三个云接口快不快，在项目根目录运行 `python scripts/smoke_test.py`。它走同一套 `DashScopeChatModel` / `DashScopeSynthesizer` / `DashScopeRecognizer`，打印千问首 token、合成首包、识别定稿，并且不输出密钥。在工作空间专属域名上，一次实测大约是千问首 token 1.4 秒、合成首包 2.5 秒、音频结束后识别定稿 0.3 秒。因此整通电话的第一声回答常常会超过 2 秒，主要花在千问和合成上。共享域名 `dashscope.aliyuncs.com` 也能通，但千问首 token 出现过大约 19 秒，而且该域名自 2026-09-30 起进入维护。
 
 ## 人设和以后要加的东西
 
@@ -128,24 +132,31 @@ v1 的大模型接口只产出文本。函数调用要同时改 `LanguageModel`�
 
 1. 打开阿里云百炼控制台：<https://bailian.console.aliyun.com/>
 2. 按文档创建 API Key：<https://help.aliyun.com/zh/model-studio/get-api-key>
-3. 确认账号能调用这三个模型：`qwen-plus`、`paraformer-realtime-v2`、`cosyvoice-v2`（音色 `longxiaochun_v2`）。
-4. 北京地域的 Key 配北京的地址。默认是：
-   - 千问：`https://dashscope.aliyuncs.com/compatible-mode/v1`
-   - 识别和合成：`wss://dashscope.aliyuncs.com/api-ws/v1/inference`
-5. 如果控制台给了工作空间专属域名，把 `.env` 里的 `DASHSCOPE_BASE_URL` 和 `DASHSCOPE_WS_URL` 换成文档里的 `{WorkspaceId}.cn-beijing.maas.aliyuncs.com`。Key 和域名必须是同一个地域。
+3. 确认这个工作空间能调用 `qwen-plus`、`paraformer-realtime-v2`、`cosyvoice-v2`（音色 `longxiaochun_v2`）。
+4. 在 `.env` 里只填两样：`DASHSCOPE_API_KEY`，以及 `DASHSCOPE_HOST`。主机名是控制台给的专属域名，形如 `ws-<工作空间ID>.cn-beijing.maas.aliyuncs.com`。`.env.example` 里的 `ws-xxxxxxxx...` 是占位符，要换成自己的。
+5. 程序用这一台主机拼出两条地址，语音路径和百炼文档里的 WebSocket 路径一致，专属域名上同样可用：
+   - 千问：`https://<主机名>/compatible-mode/v1`
+   - 识别和合成：`wss://<主机名>/api-ws/v1/inference`
+6. 只想填工作空间 ID 时，用 `DASHSCOPE_WORKSPACE_ID`。它会拼成上面的 `ws-<ID>.cn-beijing.maas.aliyuncs.com`。同时填了 `DASHSCOPE_HOST` 时以主机名为准。
+7. `DASHSCOPE_BASE_URL` 和 `DASHSCOPE_WS_URL` 仍然可以单独盖住对应的那一条。不要为了「保险」把共享域名写进去，那会盖住专属域名。
 
-服务只检查变量是不是空的，不会在启动时拿密钥去联网试一次。密钥写错时，接通后页面上会看到识别或模型返回的错误。
+新的工作空间密钥（常见前缀 `sk-ws-`）必须和这个工作空间的域名一起用。对不上时接口返回 401。没填主机名时，程序退回 `dashscope.aliyuncs.com` 并在启动日志里说明该域名已进入维护。
+
+服务启动时只检查密钥是不是空的，不会拿它去联网试一次。填完后先跑 `python scripts/smoke_test.py`。密钥写错或域名不对时，自检会打印错误，页面上的通话也会失败。Windows 上的逐步操作见 [docs/windows-quickstart.md](docs/windows-quickstart.md)。
 
 ## 本地运行
 
 需要 Python 3.11 及以上。
 
+Windows 不要照搬下面的 bash。用 [docs/windows-quickstart.md](docs/windows-quickstart.md)。
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 cp .env.example .env
-# 编辑 .env，填上 DASHSCOPE_API_KEY
+# 编辑 .env：DASHSCOPE_API_KEY 和 DASHSCOPE_HOST
+python scripts/smoke_test.py
 python -m zhiyu.server
 ```
 
@@ -165,7 +176,7 @@ pytest
 
 ```bash
 cp .env.example .env
-# 填好 DASHSCOPE_API_KEY
+# 填好 DASHSCOPE_API_KEY 和 DASHSCOPE_HOST
 docker compose up --build
 ```
 
@@ -180,7 +191,9 @@ docker compose up --build
 ## 目录
 
 ```text
+docs/windows-quickstart.md  Windows 11 逐步运行
 prompts/                 系统提示词和开场白
+scripts/smoke_test.py    千问、合成、识别的连通性和耗时
 zhiyu/config.py          环境变量。缺密钥不会让进程退出
 zhiyu/extensions.py      下一版的钩子
 zhiyu/providers/         识别、千问、CosyVoice，以及报文

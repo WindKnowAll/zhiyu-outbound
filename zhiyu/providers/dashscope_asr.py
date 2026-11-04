@@ -61,14 +61,14 @@ class DashScopeRecognizer:
             return
         self._offer(pcm)
 
-    async def stop(self) -> None:
+    async def stop(self, timeout: float = 8) -> None:
         self._closed = True
         self._offer(None)
         task = self._run_task
         if task is None:
             return
         try:
-            await asyncio.wait_for(task, timeout=3)
+            await asyncio.wait_for(task, timeout=timeout)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             task.cancel()
 
