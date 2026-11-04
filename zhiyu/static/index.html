@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>智语外呼</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="phone">
+      <header>
+        <p class="eyebrow">2026 智语外呼 · 演示</p>
+        <h1>星河大学图书馆</h1>
+        <p class="lead">小语会先开口。你可以直接说话，也可以在她说话时插话，播放会马上停。</p>
+      </header>
+
+      <p id="banner" class="banner" hidden></p>
+
+      <section class="call" aria-live="polite">
+        <div id="orb" class="orb quiet"></div>
+        <p id="status" class="status">正在检查配置</p>
+        <button id="call" type="button" disabled>开始通话</button>
+        <audio id="remote" autoplay playsinline></audio>
+      </section>
+
+      <section class="transcript" aria-label="对话记录">
+        <h2>通话记录</h2>
+        <ol id="lines"></ol>
+      </section>
+
+      <section class="latency" aria-label="本轮耗时">
+        <h2>本轮耗时</h2>
+        <dl id="latency">
+          <div><dt>ASR 定稿</dt><dd id="m-asr">—</dd></div>
+          <div><dt>LLM 首 token</dt><dd id="m-llm">—</dd></div>
+          <div><dt>TTS 首包</dt><dd id="m-tts">—</dd></div>
+          <div><dt>端到端首包</dt><dd id="m-e2e">—</dd></div>
+        </dl>
+      </section>
+
+      <footer>
+        <p>演示助手，只确认预约图书到馆。不会索要验证码、密码或银行卡。</p>
+      </footer>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

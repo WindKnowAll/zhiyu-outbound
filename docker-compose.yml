@@ -1,0 +1,31 @@
+# 一条命令启动。密钥从项目目录的 .env 读进来；没有 .env 也能打开页面，只是不能通话。
+# 本机浏览器访问 http://localhost:7860 时，媒体一般走主机候选，不依赖 STUN。
+# 浏览器和服务器不在同一台机器时，Linux 需要把下面的 UDP 端口映射打开。
+services:
+  zhiyu:
+    build: .
+    ports:
+      - "7860:7860"
+      - "40000-40100:40000-40100/udp"
+    environment:
+      HOST: 0.0.0.0
+      PORT: "7860"
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      DASHSCOPE_WS_URL: ${DASHSCOPE_WS_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/inference}
+      DASHSCOPE_LLM_MODEL: ${DASHSCOPE_LLM_MODEL:-qwen-plus}
+      DASHSCOPE_ASR_MODEL: ${DASHSCOPE_ASR_MODEL:-paraformer-realtime-v2}
+      DASHSCOPE_TTS_MODEL: ${DASHSCOPE_TTS_MODEL:-cosyvoice-v2}
+      DASHSCOPE_TTS_VOICE: ${DASHSCOPE_TTS_VOICE:-longxiaochun_v2}
+      DASHSCOPE_TTS_SAMPLE_RATE: ${DASHSCOPE_TTS_SAMPLE_RATE:-24000}
+      ICE_SERVERS: ${ICE_SERVERS:-stun:stun.qq.com:3478,stun:stun.miwifi.com:3478}
+      VAD_CONFIDENCE: ${VAD_CONFIDENCE:-0.7}
+      VAD_START_SECS: ${VAD_START_SECS:-0.2}
+      VAD_STOP_SECS: ${VAD_STOP_SECS:-0.2}
+      VAD_MIN_VOLUME: ${VAD_MIN_VOLUME:-0.6}
+      ASR_FINALIZE_TIMEOUT: ${ASR_FINALIZE_TIMEOUT:-0.35}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # aiortc 选端口时不接受指定范围。在 Linux 上把容器的临时端口收进已映射的区间，
+    # 浏览器才能从外面连上媒体。若当前 Docker 不允许 sysctl，删掉这一段，本机演示仍可用。
+    sysctls:
+      - net.ipv4.ip_local_port_range=40000 40100
