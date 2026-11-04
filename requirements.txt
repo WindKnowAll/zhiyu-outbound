@@ -1,0 +1,8 @@
+pipecat-ai[silero,webrtc]==1.15.0
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+python-dotenv>=1.0,<2
+openai>=1.55,<3
+websockets>=13,<18
+pydantic>=2.6,<3
+loguru>=0.7,<1
