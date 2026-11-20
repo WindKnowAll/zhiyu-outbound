@@ -148,7 +148,9 @@ v1 的大模型接口只产出文本。函数调用要同时改 `LanguageModel`�
 
 需要 Python 3.11 及以上。
 
-Windows 不要照搬下面的 bash。用 [docs/windows-quickstart.md](docs/windows-quickstart.md)。
+明早的离线测试命令、Windows 启动脚本和报告格式见 [docs/final-test.md](docs/final-test.md)。Windows 安装 Python 见 [docs/windows-quickstart.md](docs/windows-quickstart.md)。
+
+Windows 不要照搬下面的 bash。
 
 ```bash
 python3 -m venv .venv

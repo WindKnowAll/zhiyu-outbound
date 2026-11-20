@@ -14,10 +14,10 @@ from zhiyu.providers.base import ProviderError
 
 
 class DashScopeChatModel:
-    def __init__(self, *, api_key: str, base_url: str, model: str) -> None:
+    def __init__(self, *, api_key: str, base_url: str, model: str, timeout: float = 20.0) -> None:
         self._model = model
-        # 超时设短一些：语音通话里，10 秒还没首 token 就已经不适合继续等。
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=20.0)
+        # 默认 20 秒。通话里若 20 秒还没首 token，就当作这次请求失败。
+        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
 
     async def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         try:

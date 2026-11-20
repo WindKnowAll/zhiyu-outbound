@@ -35,12 +35,17 @@ class DashScopeSynthesizer:
         model: str,
         voice: str,
         sample_rate: int,
+        open_timeout: float = 10,
+        event_timeout: float = 10,
     ) -> None:
+        # 默认 10 秒与原来写死的值相同。
         self._api_key = api_key
         self._ws_url = ws_url
         self._model = model
         self._voice = voice
         self._sample_rate = sample_rate
+        self._open_timeout = open_timeout
+        self._event_timeout = event_timeout
         self._ws = None
         self._task_id = ""
         self._audio: asyncio.Queue[bytes | None | Exception] = asyncio.Queue()
@@ -59,7 +64,7 @@ class DashScopeSynthesizer:
             self._ws = await websockets.connect(
                 self._ws_url,
                 additional_headers=authorization_header(self._api_key),
-                open_timeout=10,
+                open_timeout=self._open_timeout,
                 max_size=8 * 1024 * 1024,
                 proxy=None,
             )
@@ -126,7 +131,7 @@ class DashScopeSynthesizer:
     async def _wait_until(self, expected: str) -> None:
         assert self._ws is not None
         while True:
-            raw = await asyncio.wait_for(self._ws.recv(), timeout=10)
+            raw = await asyncio.wait_for(self._ws.recv(), timeout=self._event_timeout)
             if isinstance(raw, bytes):
                 continue
             message = json.loads(raw)

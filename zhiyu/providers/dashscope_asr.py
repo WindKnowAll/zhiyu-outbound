@@ -33,11 +33,16 @@ class DashScopeRecognizer:
         ws_url: str,
         model: str,
         sample_rate: int = 16000,
+        open_timeout: float = 10,
+        event_timeout: float = 10,
     ) -> None:
+        # 默认 10 秒与原来写死的值相同。测试传入更短的时间，才能在本地挂起端口上验证超时分支。
         self._api_key = api_key
         self._ws_url = ws_url
         self._model = model
         self._sample_rate = sample_rate
+        self._open_timeout = open_timeout
+        self._event_timeout = event_timeout
         self._transcript_handler: Callable[[Transcript], Awaitable[None]] | None = None
         self._error_handler: Callable[[str], Awaitable[None]] | None = None
         self._audio: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=200)
@@ -97,7 +102,7 @@ class DashScopeRecognizer:
             async with websockets.connect(
                 self._ws_url,
                 additional_headers=authorization_header(self._api_key),
-                open_timeout=10,
+                open_timeout=self._open_timeout,
                 max_size=8 * 1024 * 1024,
                 proxy=None,
             ) as ws:
@@ -133,7 +138,7 @@ class DashScopeRecognizer:
 
     async def _wait_until(self, ws, expected: str) -> None:
         while True:
-            raw = await asyncio.wait_for(ws.recv(), timeout=10)
+            raw = await asyncio.wait_for(ws.recv(), timeout=self._event_timeout)
             if isinstance(raw, bytes):
                 continue
             message = json.loads(raw)
