@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tests.not_run_manifest import NOT_RUN
+from tests.not_run_manifest import conclusion_text, not_run_cases
 
 
 def _git(args: list[str]) -> str:
@@ -184,19 +184,13 @@ def main() -> int:
     if results_path.exists():
         payload = json.loads(results_path.read_text(encoding="utf-8"))
     cases = _merge(payload)
-    for item in NOT_RUN:
+    for item in not_run_cases(sys.platform):
         cases.append(dict(item))
     summary = {"通过": 0, "未通过": 0, "未测试": 0, "未实现": 0}
     for case in cases:
         summary[case["status"]] = summary.get(case["status"], 0) + 1
     failed = summary["未通过"]
-    if failed:
-        conclusion = "离线测试有未通过项，明早不能把这版当作已验收。真实麦克风和资审关单都还没做。"
-    else:
-        conclusion = (
-            "离线流程测试已通过，明早可以展示测试报告和缺密钥时的页面。"
-            "真实语音对答、Windows 实机和资审关单都未测试或未实现，不能说已经接通。"
-        )
+    conclusion = conclusion_text(sys.platform, bool(failed))
     report = {
         "generated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds"),
         "timezone": "Asia/Shanghai",

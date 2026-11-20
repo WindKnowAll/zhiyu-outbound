@@ -14,6 +14,10 @@ call "%PY%" -m pip install -r "%~dp0requirements.txt"
 if errorlevel 1 goto fail
 call "%PY%" "%~dp0scripts\preflight.py"
 if errorlevel 1 goto fail
+call "%PY%" "%~dp0scripts\reuse_listen.py" --port 7860
+if errorlevel 11 goto occupied
+if errorlevel 10 goto already
+if errorlevel 1 goto fail
 
 echo.
 echo Starting the page. Without .env you only see the missing-key message.
@@ -24,6 +28,20 @@ echo.
 echo Server stopped. Exit code %EXITCODE%.
 pause
 exit /b %EXITCODE%
+
+:already
+echo.
+echo Already running. Use http://127.0.0.1:7860
+echo This script did not start a second process.
+pause
+exit /b 0
+
+:occupied
+echo.
+echo Port 7860 is used by another program.
+echo This script did not stop that process and did not change the port.
+pause
+exit /b 11
 
 :fail_venv
 echo.

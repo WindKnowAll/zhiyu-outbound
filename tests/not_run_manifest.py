@@ -1,6 +1,35 @@
-"""这次不能跑、也不能写成通过的条目。报告脚本直接引用，不经过 pytest 打绿。"""
+"""不能由离线 pytest 打成通过的条目。
 
-NOT_RUN = [
+平台相关的句子按生成报告的那台电脑写。Linux 上不能写成 Windows 已测。
+Windows 上只能写「离线报告命令已在本进程执行」，不能写成麦克风或百炼已通过。
+"""
+
+from __future__ import annotations
+
+
+def not_run_cases(sys_platform: str) -> list[dict]:
+    on_windows = sys_platform == "win32"
+    if on_windows:
+        gap03 = {
+            "id": "GAP-03",
+            "scenario": "本次离线报告命令在什么系统上执行",
+            "test_type": "环境",
+            "expected": "若进程是 Windows，写明离线报告命令已执行，并且不把双击启动、麦克风、真实百炼算进本条",
+            "actual": "本进程平台是 Windows。本次执行的是离线报告命令。",
+            "status": "通过",
+            "reason": "只说明这条命令在 Windows 上运行。Windows启动.bat 是否双击成功、麦克风、真实百炼都不由本条证明。",
+        }
+    else:
+        gap03 = {
+            "id": "GAP-03",
+            "scenario": "本次离线报告命令在什么系统上执行",
+            "test_type": "环境",
+            "expected": "非 Windows 上生成的报告不能写成 Windows 已测",
+            "actual": "本进程平台不是 Windows。",
+            "status": "未测试",
+            "reason": "这次报告不是在 Windows 上生成的，不能写成 Windows 离线命令已测。",
+        }
+    return [
     {
         "id": "LIVE-01",
         "scenario": "用真实百炼密钥跑千问、CosyVoice、Paraformer",
@@ -17,7 +46,7 @@ NOT_RUN = [
         "expected": "页面接通后开场白播放，用户说话后有回复，插话能停播放",
         "actual": "本次未执行",
         "status": "未测试",
-        "reason": "本环境没有麦克风，也没有在 Windows 上打开浏览器。不能把离线测试写成已接通。",
+        "reason": "本命令不采集麦克风，也不调用百炼。离线通过不能写成真实语音通过。",
     },
     {
         "id": "LIVE-03",
@@ -55,13 +84,16 @@ NOT_RUN = [
         "status": "未测试",
         "reason": "当前环境没有 docker 命令，不能把以前的构建写成这次的结果。",
     },
-    {
-        "id": "GAP-03",
-        "scenario": "在 Windows 11 上实际启动",
-        "test_type": "环境",
-        "expected": "按 docs/windows-quickstart.md 在 Windows 上打开页面",
-        "actual": "本次运行环境不是 Windows",
-        "status": "未测试",
-        "reason": "没有改用户电脑，也没有在 Windows 上执行 bat。",
-    },
-]
+        gap03,
+    ]
+
+
+def conclusion_text(sys_platform: str, failed: bool) -> str:
+    """开头结论只写本进程能证明的事。"""
+
+    separate = "麦克风、真实百炼、资审关单和是否双击 Windows启动.bat 都要单独计，不能由离线结果写成通过。"
+    if failed:
+        return "离线测试有未通过项。" + separate
+    if sys_platform == "win32":
+        return "本次 Windows 离线报告命令已运行并写出报告。" + separate
+    return "本次报告不是在 Windows 上生成的，不能写成 Windows 已测。离线流程测试已通过。" + separate

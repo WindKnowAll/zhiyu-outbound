@@ -63,6 +63,11 @@ def test_scripts_prefer_venv_and_keep_failure_visible():
     assert "OFFLINE CHECK FAILED" in offline
     assert "OFFLINE CHECK PASSED" in offline
     assert "Server stopped. Exit code" in start
+    assert "reuse_listen.py" in start
+    assert "taskkill" not in start.lower()
+    assert "start http" not in start.lower()
+    assert "goto already" in start
+    assert "exit /b 11" in start
     # 成功提示必须写在检查退出码之后，不能先打印成功再忽略失败。
     offline_lines = offline.replace("\r\n", "\n").split("\n")
     passed_at = next(i for i, line in enumerate(offline_lines) if "OFFLINE CHECK PASSED" in line)
