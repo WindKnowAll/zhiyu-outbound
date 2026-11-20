@@ -21,7 +21,7 @@ python scripts/preflight.py
 
 ## 离线测试
 
-Windows 可以双击仓库根目录的 `运行离线测试.bat`。
+Windows 可以双击仓库根目录的 `运行离线测试.bat`。两个 bat 使用 CRLF。云端这次只检查了文件字节，没有在 Windows 上双击。已有 `.venv` 时直接用 `.venv\Scripts\python.exe`，不会改用 `py -3`。离线测试失败会停在窗口里，退出码不是 0，也不会先写「通过」。
 
 跨平台：
 
