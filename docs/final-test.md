@@ -7,8 +7,8 @@
 ## 依赖
 
 - 64 位 Python 3.11 或 3.12。Windows 逐步安装见 [windows-quickstart.md](windows-quickstart.md)。
-- 离线测试：`python -m pip install -r requirements-dev.txt`
-- 只启动网页：`python -m pip install -r requirements.txt`
+- 离线测试：`python -m pip install -r requirements-dev.txt`。Windows 会多装 `tzdata`（仅 `sys_platform == win32`），否则报告里的 `Asia/Shanghai` 会失败。Linux 不安装这一行。
+- 只启动网页：`python -m pip install -r requirements.txt`。这里没有 `tzdata`。
 - 国内接口仍是百炼 Paraformer、通义千问、CosyVoice。不要改成别的供应商。
 
 ## 预检

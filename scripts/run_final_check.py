@@ -9,7 +9,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo  # Windows 需 requirements-dev.txt 里的 tzdata；Linux 用系统时区库
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:

@@ -78,11 +78,13 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-只想跑网页和自检，装 `requirements.txt` 就够。还要在这台电脑上跑 `pytest` 时，再执行：
+只启动网页时，装 `requirements.txt` 就够。要跑离线测试并生成报告时，再执行：
 
 ```powershell
 python -m pip install -r requirements-dev.txt
 ```
+
+Windows 上这一步会安装 `tzdata`。没有它时，pytest 可以全部通过，但 `run_final_check.py` 写报告会因找不到 `Asia/Shanghai` 失败，bat 以退出码 1 结束。Linux 不安装这个包。
 
 安装会下载大约几百 MB，包含 Pipecat、aiortc 和 Silero 用的 onnxruntime。看到 `Successfully installed` 再继续。失败了看文末「pip 安装失败」。
 

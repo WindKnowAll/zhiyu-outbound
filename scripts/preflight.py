@@ -29,6 +29,13 @@ def main() -> int:
         print("未通过：缺少依赖 " + ", ".join(missing))
         print("在仓库根目录执行：python -m pip install -r requirements-dev.txt")
         return 1
+    if sys.platform == "win32":
+        try:
+            importlib.import_module("tzdata")
+        except Exception:
+            print("未通过：Windows 生成 Asia/Shanghai 报告需要 tzdata。")
+            print("请执行：python -m pip install -r requirements-dev.txt")
+            return 1
     env_file = ROOT / ".env"
     if env_file.exists():
         print("发现 .env。本预检不打开它，也不判断密钥是否有效。")
