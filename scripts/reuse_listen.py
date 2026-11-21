@@ -17,6 +17,13 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+# 双击 bat 时是 `python scripts\reuse_listen.py`。这时 sys.path[0] 是 scripts 目录，
+# 不是项目根，也不能依赖用户事先设置 PYTHONPATH。
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from zhiyu.build_id import PAGE_VERSION
 
