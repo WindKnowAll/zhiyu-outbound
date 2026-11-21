@@ -180,7 +180,7 @@ function handleEvent(event) {
       "结果：" + (ticket.result || "—"),
       "原因：" + (ticket.reason_text || "未向对方披露"),
       "整改：" + (ticket.action_text || "未向对方披露"),
-      "后续处理：" + (ticket.transfer_human ? "已记下，不是转接真人" : "无"),
+      "后续处理：" + (ticket.transfer_human ? "已记下，稍后由审核同事确认" : "无"),
       "预约：" + (ticket.appointment || "无"),
     ];
     ticketEl.textContent = lines.join(" ");
@@ -431,7 +431,7 @@ randomEl.addEventListener("click", async () => {
 });
 
 if (typeof ZhiyuUI === "undefined") {
-  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261121c，否则不是这次的服务。");
+  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261121d，否则不是这次的服务。");
 }
 
 loadStatus()

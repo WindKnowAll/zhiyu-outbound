@@ -301,6 +301,7 @@ class ConversationEngine:
                 return
 
             splitter = SentenceSplitter()
+            buffer_model = bool(getattr(self._hooks, "buffers_model_output", False))
 
             async def speak_sentence(sentence: str) -> None:
                 reviewed = self._hooks.review_speech(user_text, sentence)
@@ -319,12 +320,29 @@ class ConversationEngine:
                         llm_first_at[0] = time.perf_counter()
                         timings.llm_first_token_ms = (llm_first_at[0] - asr_final_at) * 1000
                     assistant_parts.append(token)
+                    if buffer_model:
+                        continue
                     for sentence in splitter.push(token):
                         await speak_sentence(sentence)
                 if generation != self._generation:
                     return
-                for sentence in splitter.flush():
-                    await speak_sentence(sentence)
+                if buffer_model:
+                    finalizer = getattr(self._hooks, "finalize_reply", None)
+                    text = "".join(assistant_parts)
+                    if finalizer is not None:
+                        try:
+                            text = finalizer(user_text, text)
+                        except Exception:
+                            logger.exception("意图结果无法使用，改走本地兜底")
+                            text = finalizer(user_text, "")
+                    held = SentenceSplitter()
+                    pieces = held.push(text)
+                    pieces.extend(held.flush())
+                    for sentence in pieces:
+                        await speak_sentence(sentence)
+                else:
+                    for sentence in splitter.flush():
+                        await speak_sentence(sentence)
                 await tts.finish()
 
             producer = asyncio.create_task(produce(), name="llm-to-tts")

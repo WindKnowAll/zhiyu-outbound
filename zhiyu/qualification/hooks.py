@@ -10,8 +10,9 @@ from zhiyu.qualification.flow import (
     QualificationCall,
     TicketStore,
     guard_customer_speech,
+    intent_system_prompt,
     new_call,
-    public_system_prompt,
+    resolve_turn,
     review_sentence,
 )
 
@@ -24,6 +25,8 @@ class QualificationHooks:
         self.store = store or TicketStore(Path("var") / "mock_tickets")
         self.emit = emit
         self._blocked = False
+        self.buffers_model_output = True
+        self.last_source = ""
 
     def opening(self) -> str:
         return self.call.opening()
@@ -32,11 +35,20 @@ class QualificationHooks:
         self.call.greeted = True
 
     async def prepare_messages(self, history: list[dict[str, str]], user_text: str) -> list[dict[str, str]]:
-        decision = self.call.plan(user_text)
         self._blocked = False
-        prompt = public_system_prompt() + f"\n【本轮只许说】{decision.speak}【说完为止】"
+        self._user_text = user_text
+        prompt = intent_system_prompt(self.call)
         prior = [item for item in history if item.get("role") != "system"]
         return [{"role": "system", "content": prompt}, *prior, {"role": "user", "content": user_text}]
+
+    def finalize_reply(self, user_text: str, model_raw: str) -> str:
+        try:
+            decision, source = resolve_turn(self.call, user_text, model_raw)
+        except Exception:
+            decision, source = resolve_turn(self.call, user_text, "")
+        self.last_source = source
+        self._blocked = False
+        return decision.speak
 
     def review_speech(self, _user_text: str, sentence: str) -> str:
         decision = self.call.pending
