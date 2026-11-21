@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import html
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,7 +16,7 @@ from pathlib import Path
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from pipecat.transports.smallwebrtc.connection import IceServer
@@ -25,6 +27,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
     SmallWebRTCRequestHandler,
 )
 
+from zhiyu.build_id import PAGE_VERSION
 from zhiyu.config import (
     Settings,
     legacy_domain_warning,
@@ -39,6 +42,56 @@ from zhiyu.session import SessionHub
 from zhiyu.transport.bot import run_bot
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+ROOT = STATIC_DIR.parent.parent
+PAGE_FILES = (
+    "zhiyu/static/index.html",
+    "zhiyu/static/app.js",
+    "zhiyu/static/call_ui.js",
+    "zhiyu/static/style.css",
+)
+
+
+def page_build() -> dict:
+    """这个进程实际会读的页面文件。用来核对是不是旧目录里的另一份页面。"""
+
+    files = []
+    for rel in PAGE_FILES:
+        path = ROOT / rel
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        files.append({"path": rel, "sha256": digest, "bytes": path.stat().st_size})
+    return {
+        "page_version": PAGE_VERSION,
+        "service_worker": False,
+        "scenario_count": len(scenario_choices(load_catalog())),
+        "files": files,
+    }
+
+
+def scenario_options_html() -> str:
+    try:
+        choices = scenario_choices(load_catalog())
+    except Exception as exc:
+        return f'<option value="">{html.escape("场景列表没有从主表读出：" + exc.__class__.__name__)}</option>'
+    if not choices:
+        return '<option value="">场景列表是空的</option>'
+    groups: dict[str, list[dict]] = {}
+    for item in choices:
+        groups.setdefault(str(item["menu"]), []).append(item)
+    parts: list[str] = []
+    for menu, items in groups.items():
+        parts.append(f'<optgroup label="{html.escape(menu)}">')
+        for item in items:
+            method = "电话" if item["phone_flow"] else "京麦驳回，不编造电话话术"
+            gap = "" if item["script_complete"] else "，话术不完整"
+            label = f'{item["category"]} / {item["reason"]}（{method}{gap}）'
+            parts.append(f'<option value="{html.escape(str(item["row"]))}">{html.escape(label)}</option>')
+        parts.append("</optgroup>")
+    return "".join(parts)
+
+
+def render_index() -> str:
+    text = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return text.replace("<!--SCENARIOS-->", scenario_options_html())
 
 
 def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -> FastAPI:
@@ -84,6 +137,10 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
     @app.get("/api/status")
     async def status() -> dict:
         return status_payload(settings)
+
+    @app.get("/api/build")
+    async def build() -> dict:
+        return page_build()
 
     @app.get("/api/scenarios")
     async def scenarios() -> dict:
@@ -144,8 +201,8 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
         return {"status": "success"}
 
     @app.get("/")
-    async def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+    async def index() -> HTMLResponse:
+        return HTMLResponse(render_index(), headers={"Cache-Control": "no-store"})
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     return app

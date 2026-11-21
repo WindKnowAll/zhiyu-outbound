@@ -4,30 +4,37 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>智语外呼</title>
-    <meta name="zhiyu-page" content="zhiyu-20261121b" />
-    <link rel="stylesheet" href="/static/style.css?v=zhiyu-20261121b" />
+    <meta name="zhiyu-page" content="zhiyu-20261121c" />
+    <link rel="stylesheet" href="/static/style.css?v=zhiyu-20261121c" />
   </head>
   <body>
     <main class="phone">
       <header>
         <p class="eyebrow">2026 智语外呼 · 比赛模拟</p>
         <h1>智语外呼</h1>
-        <p class="lead">商家资质审核驳回。这不是京东真实业务。对方是合成的脱敏商家，不是消费者。接通后先确认公司和店铺，确认前不说驳回细节。说话时可以直接插话。</p>
+        <p class="lead">京东 POP 商家资质审核比赛模拟客服。不是京东官方服务。对方是合成的脱敏商家，不是消费者。接通前就能选择测试场景。接通后先确认公司和店铺，确认前不说驳回细节。</p>
       </header>
 
       <p id="banner" class="banner" hidden></p>
 
-      <section class="call" aria-live="polite">
-        <div id="orb" class="orb quiet"></div>
-        <p id="status" class="status">正在检查配置</p>
-        <label class="scenario-label" for="scenario">本通驳回场景</label>
-        <select id="scenario" disabled></select>
-        <p id="scenario-note" class="scenario-note">正在读取资审主表。</p>
+      <section class="scenarios" aria-label="选择测试场景">
+        <h2>选择测试场景</h2>
+        <label class="scenario-label" for="scenario">资审主表全部驳回类型，通话前就能选</label>
+        <select id="scenario">
+          <!--SCENARIOS-->
+        </select>
+        <p id="scenario-note" class="scenario-note">场景列表随这页一起发出。若这里是空的，就不是这次的服务。</p>
         <div class="actions">
+          <button id="pick" type="button">选择测试场景</button>
           <button id="call" type="button" disabled>开始通话</button>
           <button id="random" type="button" disabled>随机开始通话</button>
         </div>
         <p class="scenario-note">随机开始会从全部驳回场景里抽一个，并立刻申请麦克风、接通这通电话。</p>
+      </section>
+
+      <section class="call" aria-live="polite">
+        <div id="orb" class="orb quiet"></div>
+        <p id="status" class="status">正在检查配置</p>
         <audio id="remote" autoplay playsinline></audio>
       </section>
 
@@ -52,10 +59,21 @@
       </section>
 
       <footer>
-        <p id="build">页面版本 zhiyu-20261121b。智语外呼，商家资质审核驳回。比赛模拟，不索要验证码、密码、银行卡或身份证，也不保证审核通过。</p>
+        <p id="build">页面版本 zhiyu-20261121c。智语外呼，京东 POP 商家资质审核比赛模拟客服。不是京东官方服务。不索要验证码、密码、银行卡或身份证，也不保证审核通过。</p>
       </footer>
     </main>
-    <script src="/static/call_ui.js?v=zhiyu-20261121b"></script>
-    <script src="/static/app.js?v=zhiyu-20261121b"></script>
+    <script>
+      function zhiyuPageFailed(message) {
+        var note = document.getElementById("scenario-note");
+        if (note) note.textContent = message;
+      }
+      if (navigator.serviceWorker) {
+        navigator.serviceWorker.getRegistrations().then(function (list) {
+          list.forEach(function (registration) { registration.unregister(); });
+        });
+      }
+    </script>
+    <script src="/static/call_ui.js?v=zhiyu-20261121c" onerror="zhiyuPageFailed('页面脚本没有加载。页脚必须是 zhiyu-20261121c，否则不是这次的服务。')"></script>
+    <script src="/static/app.js?v=zhiyu-20261121c" onerror="zhiyuPageFailed('页面脚本没有加载。页脚必须是 zhiyu-20261121c，否则不是这次的服务。')"></script>
   </body>
 </html>

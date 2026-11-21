@@ -234,9 +234,12 @@ async function loadStatus() {
 
 async function loadScenarios() {
   const response = await fetch("/api/scenarios");
-  if (!response.ok) throw new Error("场景列表没有读到");
+  if (!response.ok) throw new Error("场景列表接口没有返回。页面里已经有的选项仍可使用。");
   const body = await response.json();
-  fillScenarios(body.scenarios || []);
+  if (!Array.isArray(body.scenarios) || body.scenarios.length === 0) {
+    throw new Error("场景列表是空的。");
+  }
+  fillScenarios(body.scenarios);
 }
 
 function waitForIce(pc) {
@@ -374,6 +377,17 @@ async function hangup() {
   refreshControls();
 }
 
+document.getElementById("pick").addEventListener("click", () => {
+  scenarioEl.focus();
+  if (typeof scenarioEl.showPicker === "function") {
+    try {
+      scenarioEl.showPicker();
+    } catch (error) {
+      console.warn(error);
+    }
+  }
+});
+
 scenarioEl.addEventListener("change", () => {
   if (peer || starting) return;
   showChosen();
@@ -416,8 +430,16 @@ randomEl.addEventListener("click", async () => {
   }
 });
 
+if (typeof ZhiyuUI === "undefined") {
+  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261121c，否则不是这次的服务。");
+}
+
 loadStatus()
   .then(loadScenarios)
   .catch((error) => {
-    setBanner("服务没有响应：" + error.message, false);
+    const message = error.message || String(error);
+    setBanner(message, false);
+    if (scenarioNoteEl && scenarioEl.options.length === 0) {
+      scenarioNoteEl.textContent = message;
+    }
   });
