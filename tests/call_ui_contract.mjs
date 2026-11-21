@@ -34,13 +34,19 @@ const starting = ui.controls({ inCall: false, starting: true, ready: true, count
 if (!starting.randomDisabled || !starting.startDisabled) throw new Error("starting controls");
 
 let lines = [];
-lines = ui.applyUserTranscript(lines, { utterance: 0, text: "为", final: false });
-lines = ui.applyUserTranscript(lines, { utterance: 0, text: "为什么驳回", final: false });
-lines = ui.applyUserTranscript(lines, { utterance: 0, text: "为什么驳回", final: true });
-if (lines.length !== 1 || lines[0].text !== "为什么驳回" || !lines[0].final) throw new Error("user line duplicated");
-lines = ui.applyUserTranscript(lines, { utterance: 1, text: "下一句", final: false });
-if (lines.length !== 2) throw new Error("next utterance missing");
-const frozen = ui.applyUserTranscript(lines, { utterance: 0, text: "被改写", final: false });
-if (frozen[0].text !== "为什么驳回") throw new Error("final line was rewritten");
+lines = ui.applyUserTranscript(lines, { utterance: 0, text: "哦，对的对的，是", final: false });
+lines = ui.applyUserTranscript(lines, { utterance: 0, text: "哦，对的对的，是", final: true });
+if (lines.length !== 1) throw new Error("partial to final became two lines");
+lines = ui.applyUserTranscript(lines, { utterance: 0, text: "哦，对的对的，是", final: true });
+if (lines.length !== 1) throw new Error("duplicate final appended");
+lines = ui.applyUserTranscript(lines, { utterance: 1, text: "哦，对的对的，是我是我。哎，那我问一下", final: true });
+if (lines.length !== 1 || !lines[0].text.includes("问一下")) throw new Error("prefix final was not folded");
+lines.push({ role: "assistant", utterance: "bot", text: "原因", final: true });
+lines = ui.applyUserTranscript(lines, { utterance: 2, text: "是的", final: true });
+lines = ui.applyUserTranscript(lines, { utterance: 3, text: "是的", final: true });
+const yes = lines.filter((line) => line.role === "user" && line.text === "是的");
+if (yes.length !== 2) throw new Error("repeated turn was deleted");
+if (ui.playbackAction("barge_in") !== "flush") throw new Error("barge-in does not flush");
+if (ui.playbackAction("status") !== "keep") throw new Error("other events flush");
 
 console.log("call ui contract ok");

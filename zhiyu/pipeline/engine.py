@@ -312,7 +312,17 @@ class ConversationEngine:
                 await self._emit({"type": "assistant", "text": cleaned, "final": False})
                 await tts.push_text(cleaned)
 
+            async def speak_text(text: str) -> None:
+                held = SentenceSplitter()
+                pieces = held.push(text)
+                pieces.extend(held.flush())
+                for sentence in pieces:
+                    if generation != self._generation:
+                        return
+                    await speak_sentence(sentence)
+
             async def produce() -> None:
+                spoken_early = False
                 async for token in self._llm.stream(messages):
                     if generation != self._generation:
                         return
@@ -321,12 +331,21 @@ class ConversationEngine:
                         timings.llm_first_token_ms = (llm_first_at[0] - asr_final_at) * 1000
                     assistant_parts.append(token)
                     if buffer_model:
+                        ready = getattr(self._hooks, "partial_reply", None)
+                        if ready is not None:
+                            text = ready(user_text, "".join(assistant_parts))
+                            if text:
+                                spoken_early = True
+                                await speak_text(text)
+                                # 意图已经够决定这句话。剩下的 reply 字段不再挡住合成结束。
+                                await tts.finish()
+                                return
                         continue
                     for sentence in splitter.push(token):
                         await speak_sentence(sentence)
                 if generation != self._generation:
                     return
-                if buffer_model:
+                if buffer_model and not spoken_early:
                     finalizer = getattr(self._hooks, "finalize_reply", None)
                     text = "".join(assistant_parts)
                     if finalizer is not None:
@@ -335,12 +354,9 @@ class ConversationEngine:
                         except Exception:
                             logger.exception("意图结果无法使用，改走本地兜底")
                             text = finalizer(user_text, "")
-                    held = SentenceSplitter()
-                    pieces = held.push(text)
-                    pieces.extend(held.flush())
-                    for sentence in pieces:
-                        await speak_sentence(sentence)
-                else:
+                    if text:
+                        await speak_text(text)
+                elif not buffer_model:
                     for sentence in splitter.flush():
                         await speak_sentence(sentence)
                 await tts.finish()

@@ -45,10 +45,31 @@
     const id = event.utterance;
     const found = next.find((line) => line.role === "user" && line.utterance === id);
     if (found) {
-      if (found.final && event.text !== found.text) return next;
+      if (found.final && event.text === found.text) return next;
+      if (found.final && !String(event.text || "").startsWith(found.text)) return next;
       found.text = event.text;
-      found.final = Boolean(event.final);
+      found.final = Boolean(event.final) || found.final;
       return next;
+    }
+    let lastUser = -1;
+    let assistantAfter = false;
+    for (let i = 0; i < next.length; i += 1) {
+      if (next[i].role === "user") {
+        lastUser = i;
+        assistantAfter = false;
+      } else if (lastUser >= 0 && next[i].role === "assistant") {
+        assistantAfter = true;
+      }
+    }
+    if (lastUser >= 0 && !assistantAfter) {
+      const prev = next[lastUser];
+      const incoming = String(event.text || "");
+      if (incoming.startsWith(prev.text) && incoming.length > prev.text.length) {
+        prev.text = incoming;
+        prev.final = Boolean(event.final);
+        prev.utterance = id;
+        return next;
+      }
     }
     next.push({
       role: "user",
@@ -59,10 +80,15 @@
     return next;
   }
 
+  function playbackAction(eventType) {
+    return eventType === "barge_in" ? "flush" : "keep";
+  }
+
   root.ZhiyuUI = {
     pickScenario,
     renderScenarioOptions,
     controls,
     applyUserTranscript,
+    playbackAction,
   };
 })(typeof globalThis === "undefined" ? this : globalThis);

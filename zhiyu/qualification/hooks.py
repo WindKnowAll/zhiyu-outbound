@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from zhiyu.qualification.flow import (
     guard_customer_speech,
     intent_system_prompt,
     new_call,
+    peek_intent,
     resolve_turn,
     review_sentence,
 )
@@ -27,6 +29,7 @@ class QualificationHooks:
         self._blocked = False
         self.buffers_model_output = True
         self.last_source = ""
+        self._spoken_early = False
 
     def opening(self) -> str:
         return self.call.opening()
@@ -36,10 +39,26 @@ class QualificationHooks:
 
     async def prepare_messages(self, history: list[dict[str, str]], user_text: str) -> list[dict[str, str]]:
         self._blocked = False
+        self._spoken_early = False
         self._user_text = user_text
         prompt = intent_system_prompt(self.call)
         prior = [item for item in history if item.get("role") != "system"]
         return [{"role": "system", "content": prompt}, *prior, {"role": "user", "content": user_text}]
+
+    def partial_reply(self, user_text: str, model_raw: str) -> str | None:
+        """意图字段一出现就可以开口。不必等 JSON 里的 reply 写完。"""
+
+        if self._spoken_early or peek_intent(model_raw) is None:
+            return None
+        decision, source = resolve_turn(
+            self.call,
+            user_text,
+            json.dumps({"intent": peek_intent(model_raw), "reply": ""}, ensure_ascii=False),
+        )
+        self._spoken_early = True
+        self.last_source = source
+        self._blocked = False
+        return decision.speak
 
     def finalize_reply(self, user_text: str, model_raw: str) -> str:
         try:
@@ -48,6 +67,8 @@ class QualificationHooks:
             decision, source = resolve_turn(self.call, user_text, "")
         self.last_source = source
         self._blocked = False
+        if self._spoken_early:
+            return ""
         return decision.speak
 
     def review_speech(self, _user_text: str, sentence: str) -> str:

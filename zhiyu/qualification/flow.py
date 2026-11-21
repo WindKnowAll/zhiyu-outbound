@@ -45,12 +45,39 @@ class ScenarioRejected(ValueError):
     """场景编号不是主表里的行号。不能拿请求里的原文去拼提示词。"""
 
 
+_INTRO = re.compile(
+    r"尊敬的商家伙伴您好[，,]|"
+    r"您好[，,]我是京东(?:商家)?资质审核专员(?:工号X+号)?[，,]|"
+    r"我是京东(?:商家)?资质审核专员(?:工号X+号)?[，,]"
+)
+
+
+def customer_wording(text: str) -> str:
+    """原表开场里的官方自称不直接念给商家。原因和整改留下。"""
+
+    cleaned = text
+    for _ in range(3):
+        cleaned = _INTRO.sub("", cleaned)
+    return cleaned.lstrip("，, ")
+
+
 def guard_customer_speech(text: str) -> str:
     """客户听得见的句子不能暴露内部检索状态。整句换掉，避免删词后留下半句。"""
 
-    if any(marker in text for marker in LEAK_MARKERS):
+    cleaned = customer_wording(text)
+    if any(marker in cleaned for marker in LEAK_MARKERS):
         return SAFE_FALLBACK
-    return text
+    return cleaned
+
+
+_INTENT_RE = re.compile(
+    r'"intent"\s*:\s*"(confirm|deny|wrong_number|refuse|busy|complaint|callback|question|ack|unclear)"'
+)
+
+
+def peek_intent(raw: str) -> str | None:
+    found = _INTENT_RE.search(raw)
+    return found.group(1) if found else None
 
 
 def asks_to_break_rules(text: str) -> bool:
@@ -160,7 +187,7 @@ class QualificationCall:
             return
         if decision.disclosed:
             self.disclosed = True
-            self.script_text = filled_script(self.scenario, self.case.brand)[0]
+            self.script_text = customer_wording(filled_script(self.scenario, self.case.brand)[0])
             self.stage = "result"
         if decision.result == "结果确认":
             self.stage = "ending"

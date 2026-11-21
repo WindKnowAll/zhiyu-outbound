@@ -35,7 +35,7 @@ let pcId = null;
 let cursor = 0;
 let pollTimer = null;
 let botLine = null;
-let userLines = new Map();
+let userLines = [];
 let ticketSeen = false;
 let scenarios = [];
 
@@ -127,17 +127,29 @@ function handleEvent(event) {
   }
   if (event.type === "user") {
     botLine = null;
-    const id = event.utterance == null ? "legacy-" + event.text : event.utterance;
-    let body = userLines.get(id);
-    if (!body) {
-      body = addLine("你", event.text, "user");
-      userLines.set(id, body);
+    const prev = userLines;
+    const next = ZhiyuUI.applyUserTranscript(prev, event);
+    if (next.length === prev.length) {
+      for (let i = 0; i < next.length; i += 1) {
+        if (next[i].text !== prev[i].text && prev[i].el) {
+          prev[i].el.textContent = next[i].text;
+        }
+        prev[i].text = next[i].text;
+        prev[i].final = next[i].final;
+        prev[i].utterance = next[i].utterance;
+      }
     } else {
-      body.textContent = event.text;
+      const added = next[next.length - 1];
+      added.el = addLine("你", added.text, "user");
+      userLines = prev.concat(added);
     }
     return;
   }
   if (event.type === "assistant") {
+    const last = userLines[userLines.length - 1];
+    if (!last || last.role !== "assistant") {
+      userLines.push({ role: "assistant", text: "", final: true, utterance: "sep" });
+    }
     if (event.final) {
       if (!botLine) {
         botLine = addLine("客服", event.text || "……", "bot");
@@ -165,6 +177,7 @@ function handleEvent(event) {
     return;
   }
   if (event.type === "barge_in") {
+    if (ZhiyuUI.playbackAction(event.type) === "flush") flushRemoteAudio();
     statusEl.textContent = "检测到你在说话，已停止播放";
     setOrb("listening");
     return;
@@ -207,9 +220,18 @@ async function poll() {
   }
 }
 
+function flushRemoteAudio() {
+  const stream = audioEl.srcObject;
+  if (!stream) return;
+  audioEl.pause();
+  audioEl.srcObject = null;
+  audioEl.srcObject = stream;
+  audioEl.play().catch(() => {});
+}
+
 function startPolling() {
   stopPolling();
-  pollTimer = setInterval(poll, 400);
+  pollTimer = setInterval(poll, 120);
   poll();
 }
 
@@ -277,7 +299,7 @@ async function connect() {
   if (starting || peer) return;
   starting = true;
   ticketSeen = false;
-  userLines = new Map();
+  userLines = [];
   refreshControls();
   statusEl.textContent = "正在接通";
   buttonEl.disabled = true;
@@ -431,7 +453,7 @@ randomEl.addEventListener("click", async () => {
 });
 
 if (typeof ZhiyuUI === "undefined") {
-  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261121d，否则不是这次的服务。");
+  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261121e，否则不是这次的服务。");
 }
 
 loadStatus()
