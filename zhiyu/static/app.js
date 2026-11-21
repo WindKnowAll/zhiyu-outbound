@@ -453,7 +453,7 @@ randomEl.addEventListener("click", async () => {
 });
 
 if (typeof ZhiyuUI === "undefined") {
-  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261121e，否则不是这次的服务。");
+  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261121f，否则不是这次的服务。");
 }
 
 loadStatus()

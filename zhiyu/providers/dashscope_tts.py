@@ -37,8 +37,10 @@ class DashScopeSynthesizer:
         sample_rate: int,
         open_timeout: float = 10,
         event_timeout: float = 10,
+        ping_interval: float | None = 20.0,
+        ping_timeout: float | None = 20.0,
     ) -> None:
-        # 默认 10 秒与原来写死的值相同。
+        # 默认 10 秒与原来写死的值相同。ping 与 websockets 17.4 的 20/20 相同，不加大。
         self._api_key = api_key
         self._ws_url = ws_url
         self._model = model
@@ -46,6 +48,8 @@ class DashScopeSynthesizer:
         self._sample_rate = sample_rate
         self._open_timeout = open_timeout
         self._event_timeout = event_timeout
+        self._ping_interval = ping_interval
+        self._ping_timeout = ping_timeout
         self._ws = None
         self._task_id = ""
         self._audio: asyncio.Queue[bytes | None | Exception] = asyncio.Queue()
@@ -65,6 +69,8 @@ class DashScopeSynthesizer:
                 self._ws_url,
                 additional_headers=authorization_header(self._api_key),
                 open_timeout=self._open_timeout,
+                ping_interval=self._ping_interval,
+                ping_timeout=self._ping_timeout,
                 max_size=8 * 1024 * 1024,
                 proxy=None,
             )
