@@ -37,4 +37,4 @@ def test_closed_port_is_free():
 def test_unknown_page_is_not_reused():
     status = status_payload(load_settings({"DASHSCOPE_API_KEY": ""}))
     assert is_this_app("<html><title>其他程序</title></html>", 200, __import__("json").dumps(status)) is False
-    assert is_this_app("<html>智语外呼 星河大学图书馆</html>", 200, "not-json") is False
+    assert is_this_app("<html>智语外呼 比赛模拟</html>", 200, "not-json") is False

@@ -48,5 +48,10 @@ class DefaultHooks:
     ) -> list[dict[str, str]]:
         return [*history, {"role": "user", "content": user_text}]
 
+    def review_speech(self, user_text: str, sentence: str) -> str:
+        """合成这一句之前。默认不改。资审流程会在这里换掉跑偏的句子。"""
+
+        return sentence
+
     async def after_turn(self, record: TurnRecord) -> None:
         return None

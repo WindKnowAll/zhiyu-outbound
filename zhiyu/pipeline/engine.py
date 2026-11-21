@@ -270,6 +270,7 @@ class ConversationEngine:
     ) -> None:
         messages: list[dict[str, str]] = []
         assistant_parts: list[str] = []
+        spoken_parts: list[str] = []
         interrupted = False
         # 列表只有一个格子，生产协程写入，播放协程读取。
         # 不能在调用 _play 时把时间戳当参数传进去，那时第一个字还没到。
@@ -285,6 +286,15 @@ class ConversationEngine:
 
             splitter = SentenceSplitter()
 
+            async def speak_sentence(sentence: str) -> None:
+                reviewed = self._hooks.review_speech(user_text, sentence)
+                cleaned = reviewed.strip()
+                if not cleaned:
+                    return
+                spoken_parts.append(cleaned)
+                await self._emit({"type": "assistant", "text": cleaned, "final": False})
+                await tts.push_text(cleaned)
+
             async def produce() -> None:
                 async for token in self._llm.stream(messages):
                     if generation != self._generation:
@@ -294,16 +304,11 @@ class ConversationEngine:
                         timings.llm_first_token_ms = (llm_first_at[0] - asr_final_at) * 1000
                     assistant_parts.append(token)
                     for sentence in splitter.push(token):
-                        await self._emit(
-                            {"type": "assistant", "text": sentence, "final": False}
-                        )
-                        await tts.push_text(sentence)
+                        await speak_sentence(sentence)
                 if generation != self._generation:
                     return
-                # 缓冲区里的字已经在 assistant_parts 里，这里只负责送去合成。
                 for sentence in splitter.flush():
-                    await self._emit({"type": "assistant", "text": sentence, "final": False})
-                    await tts.push_text(sentence)
+                    await speak_sentence(sentence)
                 await tts.finish()
 
             producer = asyncio.create_task(produce(), name="llm-to-tts")
@@ -338,7 +343,7 @@ class ConversationEngine:
             await self._finish_reply(
                 generation,
                 user_text,
-                "".join(assistant_parts).strip(),
+                "".join(spoken_parts).strip(),
                 messages,
                 timings,
                 interrupted or generation != self._generation,

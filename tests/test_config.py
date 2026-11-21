@@ -87,6 +87,6 @@ def test_explicit_urls_override_the_host():
 
 def test_persona_files_load():
     persona = load_persona()
-    assert "小语" in persona.system_prompt
+    assert "比赛模拟" in persona.system_prompt
     assert "验证码" in persona.system_prompt
-    assert "图书馆" in persona.opening
+    assert "甲乙合成商贸有限公司" in persona.opening

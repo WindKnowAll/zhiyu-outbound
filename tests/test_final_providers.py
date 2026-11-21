@@ -193,7 +193,7 @@ async def test_synthesizer_returns_audio_from_local_server():
             event_timeout=2,
         )
         await tts.start()
-        await tts.push_text("图书馆的书到了。")
+        await tts.push_text("收到，我再确认一下。")
         await tts.finish()
         chunks = [chunk async for chunk in tts.audio_chunks()]
         await tts.cancel()

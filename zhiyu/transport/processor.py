@@ -27,6 +27,7 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from zhiyu.config import Persona, Settings
 from zhiyu.pipeline.engine import AudioSink, ConversationEngine
+from zhiyu.qualification.hooks import QualificationHooks
 from zhiyu.pipeline.vad_bridge import VadTurnBridge
 from zhiyu.session import CallSession
 
@@ -70,7 +71,8 @@ class VoiceSessionProcessor(FrameProcessor):
     ) -> None:
         super().__init__(name="zhiyu-voice")
         self._settings = settings
-        self._opening = persona.opening
+        self._hooks = QualificationHooks(emit=session.add)
+        self._opening = self._hooks.opening()
         self._session = session
         self._recognizer = recognizer
         self._vad = SileroVADAnalyzer(
@@ -88,6 +90,7 @@ class VoiceSessionProcessor(FrameProcessor):
             language_model=language_model,
             tts_factory=tts_factory,
             sink=_WebRtcSink(self, settings.tts_sample_rate),
+            hooks=self._hooks,
             listener=self._on_event,
             finalize_timeout=settings.asr_finalize_timeout,
         )
@@ -157,6 +160,7 @@ class VoiceSessionProcessor(FrameProcessor):
         if self._greeted or not self._client_connected or not self._pipeline_ready:
             return
         self._greeted = True
+        self._hooks.note_greeted()
         logger.info("播放开场白")
         await self._engine.speak_fixed(self._opening)
 
@@ -178,6 +182,7 @@ class VoiceSessionProcessor(FrameProcessor):
             return
         self._closed = True
         await self._engine.close()
+        self._hooks.on_hangup()
         try:
             await self._recognizer.stop()
         except Exception:

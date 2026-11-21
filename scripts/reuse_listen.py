@@ -18,7 +18,7 @@ import sys
 import urllib.error
 import urllib.request
 
-PAGE_MARKS = ("智语外呼", "星河大学图书馆")
+PAGE_MARKS = ("智语外呼", "比赛模拟")
 
 
 def is_this_app(html: str, status_code: int, status_body: str) -> bool:

@@ -2,6 +2,7 @@
 // 识别、大模型和合成都在服务器上。
 
 const statusEl = document.getElementById("status");
+const ticketEl = document.getElementById("ticket");
 const bannerEl = document.getElementById("banner");
 const buttonEl = document.getElementById("call");
 const linesEl = document.getElementById("lines");
@@ -81,7 +82,7 @@ function handleEvent(event) {
   if (event.type === "assistant") {
     if (event.final) {
       if (!botLine) {
-        botLine = addLine("小语", event.text || "……", "bot");
+        botLine = addLine("客服", event.text || "……", "bot");
       } else if (event.text) {
         botLine.textContent = event.text;
       }
@@ -92,7 +93,7 @@ function handleEvent(event) {
       return;
     }
     if (!botLine) {
-      botLine = addLine("小语", event.text, "bot");
+      botLine = addLine("客服", event.text, "bot");
     } else {
       botLine.textContent += event.text;
     }
@@ -108,6 +109,19 @@ function handleEvent(event) {
   if (event.type === "barge_in") {
     statusEl.textContent = "检测到你在说话，已停止播放";
     setOrb("listening");
+    return;
+  }
+  if (event.type === "mock_ticket") {
+    const ticket = event.ticket || {};
+    const lines = [
+      ticket.system || "本地模拟工单",
+      "结果：" + (ticket.result || "—"),
+      "原因：" + (ticket.reason_text || "未向对方披露"),
+      "整改：" + (ticket.action_text || "未向对方披露"),
+      "转人工：" + (ticket.transfer_human ? "是" : "否"),
+      "预约：" + (ticket.appointment || "无"),
+    ];
+    ticketEl.textContent = lines.join(" ");
     return;
   }
   if (event.type === "error") {
@@ -208,7 +222,7 @@ async function connect() {
   };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "connected") {
-      statusEl.textContent = "已接通，小语会先打招呼";
+      statusEl.textContent = "已接通，先确认公司和店铺";
       setOrb("speaking");
     }
     if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {

@@ -83,7 +83,7 @@ async def round_trip() -> None:
     if uses_legacy_dashscope_domain(settings):
         print(legacy_domain_warning())
 
-    prompt = "请只回复这一句，不要加别的字：图书馆的书到了。"
+    prompt = "请只回复这一句，不要加别的字：收到，我再确认一下。"
     model = create_language_model(settings)
     llm_started = time.perf_counter()
     first_token_at: float | None = None

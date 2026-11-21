@@ -68,12 +68,12 @@ def not_run_cases(sys_platform: str) -> list[dict]:
     },
     {
         "id": "GAP-02",
-        "scenario": "资审关单业务",
+        "scenario": "京东官方工单接口",
         "test_type": "验收缺口",
-        "expected": "有确认过的资审话术、案件字段和评判材料",
-        "actual": "现有人设仍是虚构的图书馆取书",
+        "expected": "若验收要求写回京东工单，应调用企业给出的 Mock 或沙箱接口",
+        "actual": "通话结束只写本项目本地 Mock 工单",
         "status": "未实现",
-        "reason": "仓库里没有资审官方材料。未自创话术，也没有改掉图书馆人设。",
+        "reason": "资料写明使用 Mock。当前没有官方沙箱地址，不能把本地文件写成京东工单已接通。",
     },
     {
         "id": "ENV-01",
@@ -91,7 +91,7 @@ def not_run_cases(sys_platform: str) -> list[dict]:
 def conclusion_text(sys_platform: str, failed: bool) -> str:
     """开头结论只写本进程能证明的事。"""
 
-    separate = "麦克风、真实百炼、资审关单和是否双击 Windows启动.bat 都要单独计，不能由离线结果写成通过。"
+    separate = "麦克风、真实百炼、京东官方工单和是否双击 Windows启动.bat 都要单独计，不能由离线结果写成通过。"
     if failed:
         return "离线测试有未通过项。" + separate
     if sys_platform == "win32":
