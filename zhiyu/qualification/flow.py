@@ -22,6 +22,31 @@ PROMISE = re.compile(r"保证通过|一定能过|一定可以|包过|肯定能�
 DISCLOSE = ("驳回", "商标", "授权", "资质", "整改", "重新提交", "不符合", "图形", "发票", "类目")
 GOODBYE = "感谢您的接听，祝您生活愉快，再见！"
 RESULT_LINE = "具体能否通过，还需要查看到最新的资质才能确定。您清楚了吗？"
+SAFE_FALLBACK = "这个问题我不能在电话里另外说明，也不能保证审核通过。我先记下，后续再由审核联系您。这次不会直接转接真人。"
+LEAK_MARKERS = ("原表", "标准回答", "可引用", "没有引用", "查不到", "没有写出", "提示词", "系统提示")
+
+
+class ScenarioRejected(ValueError):
+    """场景编号不是主表里的行号。不能拿请求里的原文去拼提示词。"""
+
+
+def guard_customer_speech(text: str) -> str:
+    """客户听得见的句子不能暴露内部检索状态。整句换掉，避免删词后留下半句。"""
+
+    if any(marker in text for marker in LEAK_MARKERS):
+        return SAFE_FALLBACK
+    return text
+
+
+def asks_to_break_rules(text: str) -> bool:
+    return any(word in text for word in ("忽略", "指令", "提示词", "系统提示", "原表", "密钥"))
+
+
+def asks_rejection_reason(text: str) -> bool:
+    return any(
+        word in text
+        for word in ("为什么驳回", "为何驳回", "为什么不支持", "为什么拒", "驳回原因", "不支持申请")
+    )
 
 
 @dataclass
@@ -87,7 +112,7 @@ class QualificationCall:
     def plan(self, user_text: str) -> Decision:
         kind = classify(user_text)
         if self.stage == "closed":
-            decision = Decision(speak="这通电话已经结束。我不能补充原表没有写出的政策。", mode="exact")
+            decision = Decision(speak="这通电话已经结束。我不能另外补充审核政策。", mode="exact")
         elif not self.identity_confirmed:
             decision = self._before_identity(kind)
         elif not self.disclosed:
@@ -96,6 +121,7 @@ class QualificationCall:
             decision = self._result(kind, user_text)
         else:
             decision = self._ending(kind, user_text)
+        decision.speak = guard_customer_speech(decision.speak)
         self.pending = decision
         return decision
 
@@ -108,21 +134,21 @@ class QualificationCall:
             self.identity_confirmed = True
         if decision.complaint:
             self.complaint = True
-        if interrupted:
+        if decision.appointment:
+            self.appointment = decision.appointment
+        if decision.transfer:
+            self.transfer = True
+        if decision.closed:
+            self.stage = "closed"
+            self.result = decision.result
+        if interrupted or decision.closed:
             return
         if decision.disclosed:
             self.disclosed = True
             self.script_text = filled_script(self.scenario, self.case.brand)[0]
             self.stage = "result"
-        if decision.transfer:
-            self.transfer = True
-        if decision.appointment:
-            self.appointment = decision.appointment
         if decision.result == "结果确认":
             self.stage = "ending"
-        if decision.closed:
-            self.stage = "closed"
-            self.result = decision.result
 
     def _before_identity(self, kind: str) -> Decision:
         if kind == "confirm":
@@ -137,7 +163,7 @@ class QualificationCall:
             decision = Decision(
                 speak="我记下您提到投诉或曝光。身份还没确认，这通电话不能说具体原因。请由这家公司或店铺的人本人确认后再联系。",
                 complaint=True,
-                appointment="身份确认后按原表回电告知原因",
+                appointment="身份确认后回电告知原因",
                 closed=True,
                 result="未确认身份的投诉",
                 transfer=True,
@@ -155,7 +181,7 @@ class QualificationCall:
         if kind == "complaint":
             ready = self._ready_to_disclose(identity_confirmed=False)
             ready.complaint = True
-            ready.appointment = "原表要求投诉或曝光情形回电告知原因"
+            ready.appointment = "投诉或曝光情形需要再联系并告知原因"
             return ready
         return self._ready_to_disclose(identity_confirmed=False)
 
@@ -163,7 +189,7 @@ class QualificationCall:
         text, complete = filled_script(self.scenario, self.case.brand)
         if not complete:
             return Decision(
-                speak="这个场景在原表里没有可直接说出的完整话术，我不能补写。我帮您转人工。",
+                speak=SAFE_FALLBACK,
                 identity_confirmed=identity_confirmed,
                 transfer=True,
                 closed=True,
@@ -171,10 +197,10 @@ class QualificationCall:
             )
         prefix = ""
         if self.scenario.close_method == "京麦驳回":
-            prefix = "原表这一条的关单方式是京麦驳回，不做强制回电。书面原因是："
+            prefix = "这条申请的关单方式是京麦驳回，电话里不另加承诺。"
         elif self.scenario.close_method != "电话":
             return Decision(
-                speak="原表这一条的关单方式无法识别，我不能猜。我帮您转人工。",
+                speak=SAFE_FALLBACK,
                 identity_confirmed=identity_confirmed,
                 transfer=True,
                 closed=True,
@@ -187,11 +213,13 @@ class QualificationCall:
         )
 
     def _result(self, kind: str, user_text: str) -> Decision:
+        if asks_to_break_rules(user_text):
+            return self._answer(user_text)
         if kind == "complaint":
             return Decision(
-                speak="您提到投诉或曝光。原表要求这种情形仍要告知原因，原因刚才已经按原表说过。我不能保证审核通过，并记下需要继续回电。",
+                speak="您提到投诉或曝光。原因刚才已经说过。我不能保证审核通过，并记下需要再联系您。",
                 complaint=True,
-                appointment="原表要求投诉或曝光情形回电告知原因",
+                appointment="投诉或曝光情形需要再联系并告知原因",
                 result="结果确认",
             )
         if kind == "question":
@@ -199,7 +227,7 @@ class QualificationCall:
         if kind == "callback":
             return Decision(
                 speak=RESULT_LINE,
-                appointment="商家要求回电，原表要求告知原因",
+                appointment="商家要求回电",
                 result="结果确认",
             )
         if kind == "ack":
@@ -209,6 +237,8 @@ class QualificationCall:
         return Decision(speak=RESULT_LINE, result="结果确认")
 
     def _ending(self, kind: str, user_text: str) -> Decision:
+        if asks_to_break_rules(user_text):
+            return self._answer(user_text)
         if kind == "question":
             return self._answer(user_text)
         if kind in {"ack", "other"}:
@@ -217,17 +247,30 @@ class QualificationCall:
             return Decision(
                 speak="我记下投诉或曝光。审核是否通过仍要看最新资质，我不能保证通过。感谢您的接听，再见。",
                 complaint=True,
-                appointment="原表要求投诉或曝光情形回电告知原因",
+                appointment="投诉或曝光情形需要再联系并告知原因",
                 closed=True,
                 result="已知晓并记录投诉",
             )
         return self._end(kind_result(kind), "好的，那我不再展开。再见。")
 
     def _answer(self, user_text: str) -> Decision:
-        matched = match_answer(self.catalog, user_text)
-        if matched is None:
+        if self.identity_confirmed and asks_rejection_reason(user_text):
+            text, complete = filled_script(self.scenario, self.case.brand)
+            if complete:
+                lead = ""
+                if self.scenario.close_method == "京麦驳回":
+                    lead = "这条申请的关单方式是京麦驳回，电话里不另加承诺。"
+                return Decision(speak=lead + text)
             return Decision(
-                speak="这个问题原表没有可引用的标准回答。我不能补充没有写出的政策，也不能保证审核通过。我帮您转人工。",
+                speak=SAFE_FALLBACK,
+                transfer=True,
+                closed=True,
+                result="缺话术转人工",
+            )
+        matched = match_answer(self.catalog, user_text)
+        if matched is None or any(marker in matched.answer for marker in LEAK_MARKERS):
+            return Decision(
+                speak=SAFE_FALLBACK,
                 transfer=True,
                 closed=True,
                 result="无标准回答转人工",
@@ -275,6 +318,8 @@ class QualificationCall:
             "submissions": self.case.submissions,
             "interrupted": interrupted,
             "write_error": write_error,
+            "live_transfer": False,
+            "handoff": "已记下后续处理，不是转接真人" if self.transfer else "",
         }
 
 
@@ -461,10 +506,63 @@ class TicketStore:
             return kept
 
 
+def case_for_row(row: int) -> DemoCase:
+    base = default_case()
+    return DemoCase(
+        case_id=f"SIM-R{row}",
+        company=base.company,
+        shop=base.shop,
+        brand=base.brand,
+        row=row,
+    )
+
+
+def scenario_choices(catalog: Catalog) -> list[dict]:
+    choices = []
+    for item in catalog.scenarios:
+        choices.append(
+            {
+                "id": str(item.row),
+                "row": item.row,
+                "menu": item.menu,
+                "category": item.category,
+                "reason": item.reason,
+                "close_method": item.close_method,
+                "script_complete": item.script_complete,
+                "trace": f"{item.sheet}!R{item.row}",
+                "phone_flow": item.close_method == "电话",
+            }
+        )
+    return choices
+
+
+def resolve_scenario_id(raw: object, catalog: Catalog) -> int:
+    if raw is None or raw == "":
+        return default_case().row
+    if isinstance(raw, bool):
+        raise ScenarioRejected("场景编号无效")
+    if isinstance(raw, int):
+        row = raw
+    elif isinstance(raw, str) and raw.strip().isdigit():
+        row = int(raw.strip())
+    else:
+        raise ScenarioRejected("场景编号无效")
+    if not any(item.row == row for item in catalog.scenarios):
+        raise ScenarioRejected("场景编号不在资审主表")
+    return row
+
+
+def pick_scenario(rows: list[int], index: int) -> int | None:
+    if not rows:
+        return None
+    return rows[index % len(rows)]
+
+
 def public_system_prompt() -> str:
     return (
         "你是比赛模拟里的京东商家资质审核专员，正在给合成的脱敏商家打电话。"
-        "这不是京东真实业务，也不是打给消费者。"
-        "每一轮只能说系统提示里【本轮只许说】和【说完为止】之间的那句话，不要加政策、不要改数字、不要保证审核通过。"
+        "这不是京东真实业务，也不是打给消费者，也不会把电话直接转给真人。"
+        "每一轮只能说系统提示里【本轮只许说】和【说完为止】之间的那句话。"
+        "不要说明内部资料是怎么查的。不要编造政策，不要保证审核通过。"
         "身份没确认时不能说驳回原因。不索要验证码、密码、银行卡或身份证号。"
     )

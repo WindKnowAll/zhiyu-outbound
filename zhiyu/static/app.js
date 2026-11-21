@@ -5,6 +5,9 @@ const statusEl = document.getElementById("status");
 const ticketEl = document.getElementById("ticket");
 const bannerEl = document.getElementById("banner");
 const buttonEl = document.getElementById("call");
+const randomEl = document.getElementById("random");
+const scenarioEl = document.getElementById("scenario");
+const scenarioNoteEl = document.getElementById("scenario-note");
 const linesEl = document.getElementById("lines");
 const orbEl = document.getElementById("orb");
 const audioEl = document.getElementById("remote");
@@ -25,12 +28,16 @@ const statusText = {
 };
 
 let ready = false;
+let starting = false;
 let iceServers = [{ urls: "stun:stun.qq.com:3478" }];
 let peer = null;
 let pcId = null;
 let cursor = 0;
 let pollTimer = null;
 let botLine = null;
+let userLines = new Map();
+let ticketSeen = false;
+let scenarios = [];
 
 function setBanner(text, ok) {
   if (!text) {
@@ -41,6 +48,50 @@ function setBanner(text, ok) {
   bannerEl.hidden = false;
   bannerEl.textContent = text;
   bannerEl.classList.toggle("ok", Boolean(ok));
+}
+
+function refreshControls() {
+  const state = ZhiyuUI.controls({
+    inCall: Boolean(peer),
+    starting,
+    ready,
+    count: scenarios.length,
+  });
+  if (!peer) buttonEl.disabled = state.startDisabled;
+  randomEl.disabled = state.randomDisabled;
+  scenarioEl.disabled = state.scenarioDisabled;
+}
+
+function showChosen() {
+  const selected = scenarios.find((item) => String(item.row) === scenarioEl.value);
+  if (!selected) {
+    scenarioNoteEl.textContent = "还没有选中场景。";
+    return;
+  }
+  const method = selected.phone_flow ? "电话说明" : "非电话流程，不编造电话话术";
+  const gap = selected.script_complete ? "话术来自主表该行" : "话术不完整，只记后续处理";
+  scenarioNoteEl.textContent =
+    selected.trace + " " + selected.menu + " / " + selected.category + " / " + selected.reason + "。" + method + "。" + gap + "。本通接通后锁定。";
+}
+
+function fillScenarios(items) {
+  scenarios = items;
+  scenarioEl.replaceChildren();
+  for (const group of ZhiyuUI.renderScenarioOptions(items)) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = group.menu;
+    for (const option of group.options) {
+      const node = document.createElement("option");
+      node.value = option.id;
+      node.textContent = option.label;
+      optgroup.append(node);
+    }
+    scenarioEl.append(optgroup);
+  }
+  const preferred = items.find((item) => item.row === 36) || items[0];
+  if (preferred) scenarioEl.value = String(preferred.row);
+  showChosen();
+  refreshControls();
 }
 
 function setOrb(name) {
@@ -76,7 +127,14 @@ function handleEvent(event) {
   }
   if (event.type === "user") {
     botLine = null;
-    addLine("你", event.text, "user");
+    const id = event.utterance == null ? "legacy-" + event.text : event.utterance;
+    let body = userLines.get(id);
+    if (!body) {
+      body = addLine("你", event.text, "user");
+      userLines.set(id, body);
+    } else {
+      body.textContent = event.text;
+    }
     return;
   }
   if (event.type === "assistant") {
@@ -122,10 +180,11 @@ function handleEvent(event) {
       "结果：" + (ticket.result || "—"),
       "原因：" + (ticket.reason_text || "未向对方披露"),
       "整改：" + (ticket.action_text || "未向对方披露"),
-      "转人工：" + (ticket.transfer_human ? "是" : "否"),
+      "后续处理：" + (ticket.transfer_human ? "已记下，不是转接真人" : "无"),
       "预约：" + (ticket.appointment || "无"),
     ];
     ticketEl.textContent = lines.join(" ");
+    ticketSeen = true;
     return;
   }
   if (event.type === "error") {
@@ -169,8 +228,15 @@ async function loadStatus() {
   }
   setBanner(body.message, body.ok);
   ready = Boolean(body.ok);
-  buttonEl.disabled = !ready;
   statusEl.textContent = ready ? "可以开始" : "还不能通话";
+  refreshControls();
+}
+
+async function loadScenarios() {
+  const response = await fetch("/api/scenarios");
+  if (!response.ok) throw new Error("场景列表没有读到");
+  const body = await response.json();
+  fillScenarios(body.scenarios || []);
 }
 
 function waitForIce(pc) {
@@ -205,6 +271,11 @@ async function sendCandidate(candidate) {
 }
 
 async function connect() {
+  if (starting || peer) return;
+  starting = true;
+  ticketSeen = false;
+  userLines = new Map();
+  refreshControls();
   statusEl.textContent = "正在接通";
   buttonEl.disabled = true;
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -254,6 +325,7 @@ async function connect() {
     body: JSON.stringify({
       sdp: pc.localDescription.sdp,
       type: pc.localDescription.type,
+      scenario_id: scenarioEl.value,
     }),
   });
   const answer = await response.json();
@@ -269,39 +341,83 @@ async function connect() {
   buttonEl.disabled = false;
   buttonEl.textContent = "挂断";
   buttonEl.classList.add("hangup");
+  starting = false;
+  refreshControls();
+  showChosen();
   startPolling();
 }
 
-function hangup() {
-  stopPolling();
+async function hangup() {
+  const id = pcId;
+  buttonEl.disabled = true;
+  randomEl.disabled = true;
   if (peer) {
     peer.close();
     peer = null;
   }
   audioEl.srcObject = null;
+  if (id) {
+    const deadline = Date.now() + 2000;
+    do {
+      await poll();
+      if (ticketSeen) break;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    } while (Date.now() < deadline);
+  }
+  stopPolling();
   pcId = null;
+  starting = false;
   buttonEl.textContent = "开始通话";
   buttonEl.classList.remove("hangup");
   statusEl.textContent = "已挂断";
   setOrb("quiet");
+  refreshControls();
 }
+
+scenarioEl.addEventListener("change", () => {
+  if (peer || starting) return;
+  showChosen();
+});
 
 buttonEl.addEventListener("click", async () => {
   if (peer) {
-    hangup();
+    await hangup();
     return;
   }
+  if (starting) return;
   try {
     await connect();
   } catch (error) {
     console.error(error);
     setBanner(error.message || String(error), false);
     statusEl.textContent = "没有接通";
-    hangup();
+    await hangup();
     buttonEl.disabled = !ready;
   }
 });
 
-loadStatus().catch((error) => {
-  setBanner("服务没有响应：" + error.message, false);
+randomEl.addEventListener("click", async () => {
+  if (peer || starting) return;
+  const ids = scenarios.map((item) => item.row);
+  const picked = ZhiyuUI.pickScenario(ids, Math.floor(Math.random() * ids.length));
+  if (picked == null) {
+    setBanner("没有可选的驳回场景。", false);
+    return;
+  }
+  scenarioEl.value = String(picked);
+  showChosen();
+  try {
+    await connect();
+  } catch (error) {
+    console.error(error);
+    setBanner(error.message || String(error), false);
+    statusEl.textContent = "没有接通";
+    await hangup();
+  }
 });
+
+loadStatus()
+  .then(loadScenarios)
+  .catch((error) => {
+    setBanner("服务没有响应：" + error.message, false);
+  });

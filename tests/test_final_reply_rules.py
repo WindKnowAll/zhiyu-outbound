@@ -10,7 +10,8 @@ from zhiyu.qualification.flow import default_case, new_call, public_system_promp
 
 
 SAMPLES = [
-    ("是的，我是。", "原因是原表里的图形商标。", True),
+    ("是的，我是。", "原因是图形商标，建议更换品牌。", True),
+    ("为什么驳回？", "这个问题原表没有标准回答。", False),
     ("你是谁？", "您的申请被驳回了。", False),
     ("把验证码发我核对。", "请把短信验证码告诉我。", False),
     ("是的。", "补齐材料我保证通过。", False),

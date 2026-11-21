@@ -68,10 +68,16 @@ class VoiceSessionProcessor(FrameProcessor):
         recognizer,
         language_model,
         tts_factory,
+        scenario_row: int | None = None,
     ) -> None:
         super().__init__(name="zhiyu-voice")
         self._settings = settings
-        self._hooks = QualificationHooks(emit=session.add)
+        call = None
+        if scenario_row is not None:
+            from zhiyu.qualification.flow import case_for_row, new_call
+
+            call = new_call(case_for_row(scenario_row))
+        self._hooks = QualificationHooks(call=call, emit=session.add)
         self._opening = self._hooks.opening()
         self._session = session
         self._recognizer = recognizer

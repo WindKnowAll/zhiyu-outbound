@@ -107,6 +107,39 @@ button:disabled {
 
 button.hangup { background: var(--clay); }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.scenario-label {
+  width: 100%;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+select, .scenario-note {
+  width: 100%;
+  margin: 0;
+}
+
+select {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font: inherit;
+  color: var(--ink);
+}
+
+.scenario-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .transcript, .latency { border-top: 1px solid var(--line); padding-top: 16px; }
 
 h2 {

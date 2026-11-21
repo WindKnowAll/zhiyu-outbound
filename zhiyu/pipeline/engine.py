@@ -72,6 +72,7 @@ class ConversationEngine:
         self._task: asyncio.Task | None = None
         self._finalize_task: asyncio.Task | None = None
         self._history_lock = asyncio.Lock()
+        self._utterance = 0
 
     @property
     def history(self) -> list[dict[str, str]]:
@@ -125,10 +126,11 @@ class ConversationEngine:
             if not self._parts or self._parts[-1] != cleaned:
                 self._parts.append(cleaned)
             self._partial = ""
-            if not self._user_speaking and self._speech_end_at is not None:
-                await self._commit(self._endpoint_token)
-            return
-        self._partial = cleaned
+        else:
+            self._partial = cleaned
+        await self._emit_user_preview()
+        if is_final and not self._user_speaking and self._speech_end_at is not None:
+            await self._commit(self._endpoint_token)
 
     async def speak_fixed(self, text: str) -> None:
         """不经过大模型，直接把一句固定话合成出来。开场白用这个。"""
@@ -183,6 +185,14 @@ class ConversationEngine:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
 
+    async def _emit_user_preview(self) -> None:
+        text = ("".join(self._parts) + self._partial).strip()
+        if not text:
+            return
+        await self._emit(
+            {"type": "user", "text": text, "final": False, "utterance": self._utterance}
+        )
+
     async def _commit(self, token: int) -> None:
         if token != self._endpoint_token or self._user_speaking:
             return
@@ -200,7 +210,13 @@ class ConversationEngine:
         timings = StageTimings()
         if speech_end_at is not None:
             timings.asr_final_ms = (asr_final_at - speech_end_at) * 1000
-        await self._emit({"type": "user", "text": text})
+        await self._emit(
+            {"type": "user", "text": text, "final": True, "utterance": self._utterance}
+        )
+        self._utterance += 1
+        # 先把定稿交给页面，再开始大模型和合成。否则事件循环被模型请求占住时，
+        # 转写要等下一句客服话出来才看得到。
+        await asyncio.sleep(0)
         await self._start_reply(
             generation_bump=True,
             user_text=text,

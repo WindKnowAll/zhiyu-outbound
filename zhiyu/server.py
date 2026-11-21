@@ -33,6 +33,8 @@ from zhiyu.config import (
     status_payload,
     uses_legacy_dashscope_domain,
 )
+from zhiyu.qualification.catalog import load_catalog
+from zhiyu.qualification.flow import ScenarioRejected, resolve_scenario_id, scenario_choices
 from zhiyu.session import SessionHub
 from zhiyu.transport.bot import run_bot
 
@@ -75,6 +77,20 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
     async def status() -> dict:
         return status_payload(settings)
 
+    @app.get("/api/scenarios")
+    async def scenarios() -> dict:
+        catalog = load_catalog()
+        return {
+            "simulation": True,
+            "notice": "比赛模拟，商家是合成数据，不是京东官方服务。",
+            "counts": {
+                "场景汇总": catalog.audit["场景汇总"],
+                "电话": catalog.audit["电话"],
+                "京麦驳回": catalog.audit["京麦驳回"],
+            },
+            "scenarios": scenario_choices(catalog),
+        }
+
     @app.get("/api/sessions/{pc_id}")
     async def session_events(pc_id: str, cursor: int = 0) -> dict:
         session = hub.get(pc_id)
@@ -86,13 +102,20 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
 
     @app.post("/api/offer")
     async def offer(request: Request, background_tasks: BackgroundTasks):
+        payload = await request.json()
+        scenario_raw = payload.pop("scenario_id", None)
+        try:
+            scenario_row = resolve_scenario_id(scenario_raw, load_catalog())
+        except ScenarioRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
         if not settings.credentials_ready:
             return JSONResponse(status_code=503, content=status_payload(settings))
-        payload = await request.json()
         rtc_request = SmallWebRTCRequest.from_dict(payload)
 
         async def start_bot(connection) -> None:
-            background_tasks.add_task(run_bot, connection, settings, persona, hub)
+            background_tasks.add_task(
+                run_bot, connection, settings, persona, hub, scenario_row
+            )
 
         answer = await webrtc.handle_web_request(rtc_request, start_bot)
         return answer

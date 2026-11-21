@@ -21,7 +21,13 @@ from zhiyu.session import SessionHub
 from zhiyu.transport.processor import VoiceSessionProcessor
 
 
-async def run_bot(connection, settings: Settings, persona: Persona, hub: SessionHub) -> None:
+async def run_bot(
+    connection,
+    settings: Settings,
+    persona: Persona,
+    hub: SessionHub,
+    scenario_row: int | None = None,
+) -> None:
     session = hub.open(connection.pc_id)
     logger.info("开始通话 {}", connection.pc_id)
     try:
@@ -39,6 +45,7 @@ async def run_bot(connection, settings: Settings, persona: Persona, hub: Session
         recognizer=recognizer,
         language_model=language_model,
         tts_factory=lambda: create_synthesizer(settings),
+        scenario_row=scenario_row,
     )
     transport = SmallWebRTCTransport(
         webrtc_connection=connection,

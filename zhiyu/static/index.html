@@ -19,7 +19,14 @@
       <section class="call" aria-live="polite">
         <div id="orb" class="orb quiet"></div>
         <p id="status" class="status">正在检查配置</p>
-        <button id="call" type="button" disabled>开始通话</button>
+        <label class="scenario-label" for="scenario">本通驳回场景</label>
+        <select id="scenario" disabled></select>
+        <p id="scenario-note" class="scenario-note">正在读取资审主表。</p>
+        <div class="actions">
+          <button id="call" type="button" disabled>开始通话</button>
+          <button id="random" type="button" disabled>随机开始通话</button>
+        </div>
+        <p class="scenario-note">随机开始会从全部驳回场景里抽一个，并立刻申请麦克风、接通这通电话。</p>
         <audio id="remote" autoplay playsinline></audio>
       </section>
 
@@ -47,6 +54,7 @@
         <p>比赛模拟。不索要验证码、密码、银行卡或身份证，也不保证审核通过。</p>
       </footer>
     </main>
+    <script src="/static/call_ui.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

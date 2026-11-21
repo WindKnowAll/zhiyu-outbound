@@ -9,6 +9,7 @@ from zhiyu.extensions import TurnRecord
 from zhiyu.qualification.flow import (
     QualificationCall,
     TicketStore,
+    guard_customer_speech,
     new_call,
     public_system_prompt,
     review_sentence,
@@ -47,8 +48,11 @@ class QualificationHooks:
             identity_confirmed=self.call.identity_confirmed,
             blocked=self._blocked,
         )
+        guarded = guard_customer_speech(spoken)
+        if guarded != spoken:
+            blocked = True
         self._blocked = blocked
-        return spoken
+        return guarded
 
     async def after_turn(self, record: TurnRecord) -> None:
         self.call.commit(record.interrupted)
