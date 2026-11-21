@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -48,8 +49,21 @@ def test_scenario_api_lists_the_whole_table_without_providers(monkeypatch):
     assert missing_key.status_code == 503
 
 
+def _node_binary() -> str | None:
+    found = shutil.which("node")
+    if found:
+        return found
+    for candidate in ("/usr/bin/node", "/usr/local/bin/node"):
+        if Path(candidate).is_file():
+            return candidate
+    return None
+
+
 def test_browser_contract_covers_pool_timing_and_lock():
-    subprocess.check_call(["node", "tests/call_ui_contract.mjs"], cwd=Path(__file__).resolve().parents[1])
+    node = _node_binary()
+    if node is None:
+        pytest.skip("本机没有 node。同一页面契约在有 node 的环境里执行 tests/call_ui_contract.mjs。")
+    subprocess.check_call([node, "tests/call_ui_contract.mjs"], cwd=Path(__file__).resolve().parents[1])
 
 
 @pytest.mark.asyncio
