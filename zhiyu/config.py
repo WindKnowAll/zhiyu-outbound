@@ -173,7 +173,7 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         vad_stop_secs=_float(source, "VAD_STOP_SECS", 0.2),
         vad_min_volume=_float(source, "VAD_MIN_VOLUME", 0.6),
         asr_finalize_timeout=_float(source, "ASR_FINALIZE_TIMEOUT", 0.35),
-        host=_text(source, "HOST", "0.0.0.0"),
+        host=_text(source, "HOST", "127.0.0.1"),
         port=_int(source, "PORT", 7860),
         log_level=_text(source, "LOG_LEVEL", "INFO"),
     )

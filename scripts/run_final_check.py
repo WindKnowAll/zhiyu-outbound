@@ -165,6 +165,33 @@ def _markdown(report: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def decode_process_output(data: bytes | str | None) -> str:
+    """子进程输出按 UTF-8 解读。Windows 默认 GBK 读不了的字节改成替换符，不能让整份报告中断。"""
+
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    return data.decode("utf-8", errors="replace")
+
+
+def capture_command(command: list[str], cwd: Path, env: dict[str, str]) -> tuple[int, str, str]:
+    """用字节读取子进程。text=True 会按 Windows 的 GBK 解码，遇到 Pipecat 的符号就会失败。"""
+
+    child_env = dict(env)
+    child_env["PYTHONUTF8"] = "1"
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    try:
+        completed = subprocess.run(command, cwd=cwd, env=child_env, capture_output=True)
+    except Exception as exc:
+        return 1, "", f"无法启动命令：{exc}"
+    return (
+        int(completed.returncode if completed.returncode is not None else 1),
+        decode_process_output(completed.stdout),
+        decode_process_output(completed.stderr),
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="离线最终检查")
     parser.add_argument("--output", default="reports/latest")
@@ -175,14 +202,20 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     results_path = out / "pytest-results.json"
     log_path = out / "pytest.log"
+    if results_path.exists():
+        results_path.unlink()
     command = [sys.executable, "-m", "pytest", "-q", "--tb=short"]
     env = dict(**{k: v for k, v in __import__("os").environ.items()})
     env["ZHIYU_PYTEST_RESULTS"] = str(results_path)
-    completed = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
-    log_path.write_text(completed.stdout + "\n" + completed.stderr, encoding="utf-8")
-    payload = {"exitstatus": completed.returncode, "results": []}
+    exit_code, stdout, stderr = capture_command(command, ROOT, env)
+    log_path.write_text(stdout + "\n" + stderr, encoding="utf-8")
+    payload = {"exitstatus": exit_code, "results": []}
     if results_path.exists():
-        payload = json.loads(results_path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(results_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {"exitstatus": exit_code, "results": []}
+    payload["exitstatus"] = exit_code
     cases = _merge(payload)
     for item in not_run_cases(sys.platform):
         cases.append(dict(item))
@@ -198,7 +231,7 @@ def main() -> int:
         "branch": _git(["rev-parse", "--abbrev-ref", "HEAD"]),
         "environment": f"Python {sys.version.split()[0]} {platform.platform()}",
         "command": "python scripts/run_final_check.py --output " + str(args.output),
-        "pytest_exit_code": completed.returncode,
+        "pytest_exit_code": exit_code,
         "summary": summary,
         "conclusion": conclusion,
         "cases": cases,
@@ -209,7 +242,7 @@ def main() -> int:
     (out / "report.html").write_text(_html(report), encoding="utf-8")
     print(conclusion)
     print(f"报告目录：{out}")
-    return 1 if failed or completed.returncode != 0 else 0
+    return 1 if failed or exit_code != 0 else 0
 
 
 if __name__ == "__main__":

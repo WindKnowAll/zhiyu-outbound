@@ -4,12 +4,10 @@
 不能因为缺少 git 历史而把整份离线测试打成失败。
 """
 
-import subprocess
-
 import pytest
 
 from scripts.package_test_bundle import assert_crlf_bat
-from scripts.patch_closure import INSTALL_BASELINE, missing_patch_files
+from scripts.patch_closure import INSTALL_BASELINE, NotASourceCheckout, missing_patch_files
 
 
 def test_assert_crlf_bat_can_be_imported():
@@ -19,6 +17,20 @@ def test_assert_crlf_bat_can_be_imported():
 def test_f0d6e4a_patch_includes_assert_crlf_bat_module():
     try:
         missing = missing_patch_files(INSTALL_BASELINE, "HEAD")
-    except subprocess.CalledProcessError:
-        pytest.skip("当前目录不是 git 仓库，安装包只要求 assert_crlf_bat 能导入")
+    except NotASourceCheckout as exc:
+        pytest.skip(f"安装包不做源码增量比对：{exc}")
     assert missing == []
+
+
+def test_missing_git_is_not_counted_as_a_complete_patch(tmp_path, monkeypatch):
+    monkeypatch.setattr("scripts.patch_closure.ROOT", tmp_path)
+    with pytest.raises(NotASourceCheckout):
+        missing_patch_files()
+
+
+def test_git_missing_from_path_is_not_counted_as_a_complete_patch(tmp_path, monkeypatch):
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr("scripts.patch_closure.ROOT", tmp_path)
+    monkeypatch.setattr("scripts.patch_closure.shutil.which", lambda _name: None)
+    with pytest.raises(NotASourceCheckout):
+        missing_patch_files()

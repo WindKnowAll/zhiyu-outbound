@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -10,12 +11,27 @@ ROOT = Path(__file__).resolve().parents[1]
 INSTALL_BASELINE = "f0d6e4a"
 
 
+class NotASourceCheckout(Exception):
+    """安装包没有 .git，或本机没有 git。这不是「增量完整」的通过。"""
+
+
 def changed_files(baseline: str = INSTALL_BASELINE, head: str = "HEAD") -> list[str]:
-    out = subprocess.check_output(
-        ["git", "diff", "--name-only", f"{baseline}..{head}"],
-        cwd=ROOT,
-        text=True,
-    )
+    if not (ROOT / ".git").exists():
+        raise NotASourceCheckout("没有 .git，这是解压后的安装包，不能做源码增量比对")
+    if shutil.which("git") is None:
+        raise NotASourceCheckout("PATH 里没有 git，不能做源码增量比对")
+    try:
+        out = subprocess.check_output(
+            ["git", "diff", "--name-only", f"{baseline}..{head}"],
+            cwd=ROOT,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise NotASourceCheckout("PATH 里没有 git，不能做源码增量比对") from exc
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 128:
+            raise NotASourceCheckout("git 不认为这里是仓库") from exc
+        raise
     return [line for line in out.splitlines() if line]
 
 
