@@ -15,6 +15,7 @@ if errorlevel 1 goto fail
 call "%PY%" "%~dp0scripts\preflight.py"
 if errorlevel 1 goto fail
 call "%PY%" "%~dp0scripts\reuse_listen.py" --port 7860
+if errorlevel 12 goto stale
 if errorlevel 11 goto occupied
 if errorlevel 10 goto already
 if errorlevel 1 goto fail
@@ -35,6 +36,14 @@ echo Already running. Use http://127.0.0.1:7860
 echo This script did not start a second process.
 pause
 exit /b 0
+
+:stale
+echo.
+echo 7860 is still serving an older page.
+echo Stop that black window with Ctrl+C, then double-click this file again.
+echo Refreshing the browser is not enough. The footer must show zhiyu-20261121b.
+pause
+exit /b 12
 
 :occupied
 echo.

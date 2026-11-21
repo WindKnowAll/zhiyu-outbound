@@ -73,6 +73,14 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
     app.state.settings = settings
     app.state.hub = hub
 
+    @app.middleware("http")
+    async def do_not_cache_pages(request: Request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get("/api/status")
     async def status() -> dict:
         return status_payload(settings)

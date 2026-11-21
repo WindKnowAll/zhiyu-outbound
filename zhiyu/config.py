@@ -10,6 +10,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from zhiyu.build_id import PAGE_BUSINESS, PAGE_PRODUCT, PAGE_VERSION
+
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -198,6 +200,9 @@ def status_payload(settings: Settings) -> dict:
     """给网页和健康检查用。只说明密钥在不在，不去联网验证。"""
 
     endpoint = {
+        "page_version": PAGE_VERSION,
+        "page_product": PAGE_PRODUCT,
+        "page_business": PAGE_BUSINESS,
         "dashscope_host": settings.dashscope_host,
         "dashscope_base_url": settings.dashscope_base_url,
         "dashscope_ws_url": settings.dashscope_ws_url,

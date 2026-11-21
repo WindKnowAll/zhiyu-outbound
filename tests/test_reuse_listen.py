@@ -4,7 +4,7 @@ from zhiyu.config import load_settings, status_payload
 from zhiyu.server import create_app
 from fastapi.testclient import TestClient
 
-from scripts.reuse_listen import is_this_app, listening_pids
+from scripts.reuse_listen import is_this_app, listening_pids, page_generation
 
 
 NETSTAT = """
@@ -32,6 +32,14 @@ def test_closed_port_is_free():
     from scripts.reuse_listen import classify
 
     assert classify(closed_port(), timeout=0.3) == "free"
+
+
+def test_library_page_is_stale_and_current_page_has_the_version():
+    library = "<html><title>智语外呼</title><h1>星河大学图书馆</h1><p>预约的书已经到馆</p></html>"
+    previous = "<html><title>智语外呼</title><h1>商家资质审核驳回</h1><p>比赛模拟</p></html>"
+    assert page_generation(library) == "stale"
+    assert page_generation(previous) == "stale"
+    assert page_generation("<html>其他程序</html>") == "other"
 
 
 def test_unknown_page_is_not_reused():

@@ -10,8 +10,16 @@ def test_homepage_and_status_open_without_a_key(monkeypatch):
     with TestClient(app) as client:
         page = client.get("/")
         assert page.status_code == 200
-        assert "智语外呼" in page.text
-        assert "echoCancellation" in client.get("/static/app.js").text
+        assert page.headers["cache-control"] == "no-store"
+        assert "<title>智语外呼</title>" in page.text
+        assert "<h1>智语外呼</h1>" in page.text
+        assert "商家资质审核驳回" in page.text
+        assert "zhiyu-20261121b" in page.text
+        for old in ("图书馆", "星河", "取书", "小语"):
+            assert old not in page.text
+        script = client.get("/static/app.js")
+        assert script.headers["cache-control"] == "no-store"
+        assert "echoCancellation" in script.text
 
         status = client.get("/api/status")
         assert status.status_code == 200

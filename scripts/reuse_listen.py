@@ -18,7 +18,10 @@ import sys
 import urllib.error
 import urllib.request
 
-PAGE_MARKS = ("智语外呼", "比赛模拟")
+from zhiyu.build_id import PAGE_VERSION
+
+PAGE_MARKS = ("智语外呼", "比赛模拟", PAGE_VERSION)
+OLD_PAGE_MARKS = ("图书馆", "星河大学", "取书")
 
 
 def is_this_app(html: str, status_code: int, status_body: str) -> bool:
@@ -89,8 +92,18 @@ def port_accepts(port: int, timeout: float) -> bool:
         sock.close()
 
 
+def page_generation(html: str) -> str:
+    """current 是这次页面，stale 是图书馆或没有版本号的旧智语外呼，other 是别的程序。"""
+
+    if all(mark in html for mark in PAGE_MARKS):
+        return "current"
+    if any(mark in html for mark in OLD_PAGE_MARKS) or ("智语外呼" in html and PAGE_VERSION not in html):
+        return "stale"
+    return "other"
+
+
 def classify(port: int, timeout: float = 2.0) -> str:
-    """返回 free、ours 或 other。不读取 .env。"""
+    """返回 free、ours、stale 或 other。不读取 .env。"""
 
     if not port_accepts(port, timeout):
         return "free"
@@ -100,8 +113,12 @@ def classify(port: int, timeout: float = 2.0) -> str:
         status_code, body = _read(base + "/api/status", timeout)
     except (urllib.error.URLError, TimeoutError, OSError):
         return "other"
-    if page_code == 200 and is_this_app(html, status_code, body):
+    if page_code != 200:
+        return "other"
+    if is_this_app(html, status_code, body):
         return "ours"
+    if page_generation(html) == "stale":
+        return "stale"
     return "other"
 
 
@@ -132,7 +149,13 @@ def main() -> int:
     if kind == "ours":
         print(f"ALREADY http://127.0.0.1:{args.port}")
         print("已有本项目页面。请直接打开上面的地址，不要再启动第二个进程。")
+        print(f"页脚应能看到页面版本 {PAGE_VERSION}。")
         return 10
+    if kind == "stale":
+        print(f"STALE http://127.0.0.1:{args.port}")
+        print("7860 上是旧页面。请先到那个黑色窗口按 Ctrl+C 停掉，再重新双击本脚本。")
+        print("只刷新浏览器不够。页脚要出现页面版本 " + PAGE_VERSION + " 才是这次的智语外呼。")
+        return 12
     pids = windows_listening_pids(args.port)
     pid_text = ",".join(pids) if pids else "未知"
     print(f"OCCUPIED port={args.port} pid={pid_text}")
