@@ -386,6 +386,9 @@ class ConversationEngine:
             interrupted = True
         except Exception as exc:
             logger.exception("生成回复失败")
+            note = getattr(self._hooks, "note_provider_error", None)
+            if note is not None:
+                note()
             await self._emit({"type": "error", "message": _public_error(exc)})
             interrupted = generation != self._generation
         finally:
@@ -496,13 +499,7 @@ class ConversationEngine:
         user_text: str,
         assistant_text: str,
     ) -> None:
-        logger.info(
-            "耗时 {} | 打断={} | 用户={} | 客服={}",
-            timings.as_log(),
-            interrupted,
-            _short(user_text),
-            _short(assistant_text),
-        )
+        logger.info("耗时 {} | 打断={}", timings.as_log(), interrupted)
         await self._emit(
             {
                 "type": "latency",

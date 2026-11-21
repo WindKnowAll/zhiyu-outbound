@@ -16,6 +16,7 @@ from zhiyu.qualification.catalog import SOURCE_NOTES, load_catalog
 from zhiyu.qualification.flow import (
     LEAK_MARKERS,
     RESULT_LINE,
+    SAFE_FALLBACK,
     DemoCase,
     TicketStore,
     case_for_row,
@@ -387,6 +388,178 @@ async def test_colloquial_confirmations_enter_the_rejection_reason(tmp_path, utt
     assert "京东资质审核专员" not in spoken
     assert "转接真人" not in spoken
     assert "不能在电话里另外说明" not in spoken
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "uttered",
+    ["对对对，是我们", "是我们公司", "是我们店", "是我是我"],
+)
+async def test_shi_women_confirmations_enter_the_reason_when_the_model_agrees(tmp_path, uttered):
+    events: list[dict] = []
+    llm = IntentLLM("confirm", reply="我去我帮你把情况记下来，然后去跟合适的这个同事反馈")
+    hooks = QualificationHooks(store=TicketStore(tmp_path), emit=events.append)
+    engine, made = _engine(llm, hooks)
+    await _say(engine, uttered)
+    spoken = _spoken(made)
+    assert "图形商标" in spoken
+    assert "更换品牌" in spoken
+    assert "记下来" not in spoken
+    assert "同事反馈" not in spoken
+    assert hooks.call.identity_confirmed is True
+    assert hooks.call.disclosed is True
+    assert hooks.call.transfer is False
+    trace = hooks.last_trace
+    assert trace["provider_called"] is True
+    assert trace["provider_status"] == "success"
+    assert trace["intent"] == "confirm"
+    assert trace["state_before"] == "identity"
+    assert trace["identity_after"] is True
+    assert trace["script_missing"] is False
+    blob = json.dumps(trace, ensure_ascii=False)
+    assert uttered not in blob
+    assert "甲乙" not in blob
+    assert any(item.get("type") == "turn_trace" for item in events)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uttered", ["不是我们", "打错了", "我不是"])
+async def test_denials_do_not_disclose_or_transfer_as_a_note(tmp_path, uttered):
+    llm = IntentLLM("confirm", reply="图形商标不支持申请")
+    hooks = QualificationHooks(store=TicketStore(tmp_path))
+    engine, made = _engine(llm, hooks)
+    await _say(engine, uttered)
+    spoken = _spoken(made)
+    assert "图形商标" not in spoken
+    assert hooks.call.identity_confirmed is False
+    assert hooks.call.disclosed is False
+    assert hooks.last_trace["intent"] == "wrong_number"
+    assert hooks.last_trace["provider_status"] == "success"
+    assert hooks.last_trace["fallback_reason"] == "strong_deny"
+
+
+@pytest.mark.asyncio
+async def test_unclear_or_broken_model_output_does_not_open_a_human_followup(tmp_path):
+    hooks = QualificationHooks(store=TicketStore(tmp_path))
+    engine, made = _engine(IntentLLM("question", reply="我帮你反馈给同事"), hooks)
+    await _say(engine, "你好")
+    spoken = _spoken(made)
+    assert "图形商标" not in spoken
+    assert SAFE_FALLBACK not in spoken
+    assert hooks.call.transfer is False
+    assert hooks.call.identity_confirmed is False
+    assert hooks.last_trace["provider_status"] == "success"
+    assert hooks.last_trace["intent"] == "question"
+
+    hooks = QualificationHooks(store=TicketStore(tmp_path))
+    engine, made = _engine(FixedLLM("我去我帮你把情况记下来，然后去跟合适的这个同事反馈"), hooks)
+    await _say(engine, "你好")
+    spoken = _spoken(made)
+    assert "记下来" not in spoken
+    assert "图形商标" not in spoken
+    assert hooks.call.transfer is False
+    assert hooks.last_trace["provider_status"] == "unparsed"
+    assert hooks.last_source == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_unparsed_shi_women_still_confirms_without_claiming_model_success(tmp_path):
+    hooks = QualificationHooks(store=TicketStore(tmp_path))
+    engine, made = _engine(FixedLLM("我去我帮你把情况记下来，然后去跟合适的这个同事反馈"), hooks)
+    await _say(engine, "对对对，是我们")
+    spoken = _spoken(made)
+    assert "图形商标" in spoken
+    assert "记下来" not in spoken
+    assert hooks.last_source == "fallback"
+    assert hooks.last_trace["provider_status"] == "unparsed"
+    assert hooks.last_trace["provider_status"] != "success"
+    assert hooks.last_trace["intent"] == "confirm"
+    assert hooks.call.identity_confirmed is True
+    assert hooks.call.transfer is False
+
+
+@pytest.mark.asyncio
+async def test_missing_script_confirm_does_not_invent_a_reason(tmp_path):
+    call = new_call(case_for_row(28))
+    assert call.scenario.script_complete is False
+    hooks = QualificationHooks(call=call, store=TicketStore(tmp_path))
+    engine, made = _engine(IntentLLM("confirm", reply="建议您更换一个并不存在的材料"), hooks)
+    await _say(engine, "是我们公司")
+    spoken = _spoken(made)
+    assert spoken.strip() == SAFE_FALLBACK or SAFE_FALLBACK in spoken
+    assert "更换" not in spoken
+    assert "图形商标" not in spoken
+    assert hooks.call.identity_confirmed is True
+    assert hooks.call.disclosed is False
+    assert hooks.last_trace["script_missing"] is True
+    assert "script_missing" in hooks.last_trace["fallback_reason"]
+    assert hooks.last_trace["provider_status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_empty_model_stream_is_not_counted_as_success(tmp_path):
+    class EmptyLLM:
+        def __init__(self) -> None:
+            self.messages: list[list[dict]] = []
+
+        async def stream(self, messages):
+            self.messages.append(messages)
+            if False:
+                yield ""
+
+    hooks = QualificationHooks(store=TicketStore(tmp_path))
+    engine, made = _engine(EmptyLLM(), hooks)
+    await _say(engine, "对对对，是我们")
+    assert hooks.last_trace["provider_called"] is True
+    assert hooks.last_trace["provider_status"] == "empty"
+    assert "图形商标" in _spoken(made)
+    assert hooks.call.transfer is False
+
+
+@pytest.mark.asyncio
+async def test_free_text_before_intent_is_not_spoken(tmp_path):
+    class Preamble:
+        def __init__(self) -> None:
+            self.messages: list[list[dict]] = []
+
+        async def stream(self, messages):
+            self.messages.append(messages)
+            yield "我去我帮你把情况记下来，然后去跟合适的这个同事反馈"
+            await asyncio.sleep(0.05)
+            yield '{"intent": "confirm", "reply": ""}'
+
+    hooks = QualificationHooks(store=TicketStore(tmp_path))
+    made: list[ScriptedTTS] = []
+
+    class MarkTTS(ScriptedTTS):
+        def __init__(self) -> None:
+            super().__init__()
+            self.seen_preamble = False
+
+        async def push_text(self, text: str) -> None:
+            if "记下来" in text:
+                self.seen_preamble = True
+            await super().push_text(text)
+
+    def factory():
+        tts = MarkTTS()
+        made.append(tts)
+        return tts
+
+    engine = ConversationEngine(
+        system_prompt=load_persona().system_prompt,
+        language_model=Preamble(),
+        tts_factory=factory,
+        sink=ListSink(),
+        hooks=hooks,
+        finalize_timeout=0,
+    )
+    await _say(engine, "是我们店")
+    assert made
+    assert made[0].seen_preamble is False
+    assert "图形商标" in _spoken(made)
+    assert hooks.last_trace["intent"] == "confirm"
+    assert hooks.last_trace["provider_status"] == "success"
 
 
 @pytest.mark.asyncio

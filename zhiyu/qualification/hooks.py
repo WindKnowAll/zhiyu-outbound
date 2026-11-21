@@ -29,7 +29,10 @@ class QualificationHooks:
         self._blocked = False
         self.buffers_model_output = True
         self.last_source = ""
+        self.last_trace: dict = {}
+        self._turn_id = 0
         self._spoken_early = False
+        self._provider_status = ""
 
     def opening(self) -> str:
         return self.call.opening()
@@ -40,6 +43,8 @@ class QualificationHooks:
     async def prepare_messages(self, history: list[dict[str, str]], user_text: str) -> list[dict[str, str]]:
         self._blocked = False
         self._spoken_early = False
+        self._turn_id += 1
+        self._provider_status = ""
         self._user_text = user_text
         prompt = intent_system_prompt(self.call)
         prior = [item for item in history if item.get("role") != "system"]
@@ -57,6 +62,7 @@ class QualificationHooks:
         )
         self._spoken_early = True
         self.last_source = source
+        self._remember_resolution()
         self._blocked = False
         return decision.speak
 
@@ -66,6 +72,7 @@ class QualificationHooks:
         except Exception:
             decision, source = resolve_turn(self.call, user_text, "")
         self.last_source = source
+        self._remember_resolution()
         self._blocked = False
         if self._spoken_early:
             return ""
@@ -87,8 +94,52 @@ class QualificationHooks:
         self._blocked = blocked
         return guarded
 
+    def note_provider_error(self) -> None:
+        self._provider_status = "error"
+        if not self.last_trace:
+            self.last_trace = {
+                "turn_id": self._turn_id,
+                "state_before": self.call.stage,
+                "provider_called": True,
+                "provider_status": "error",
+                "intent": "",
+                "fallback_reason": "error",
+                "script_missing": False,
+                "source": "fallback",
+            }
+
+    def _remember_resolution(self) -> None:
+        found = dict(self.call.last_resolution or {})
+        if self._provider_status == "error":
+            found["provider_status"] = "error"
+            found["fallback_reason"] = "error"
+            found["source"] = "fallback"
+        found["turn_id"] = self._turn_id
+        found.setdefault("provider_called", True)
+        self.last_trace = found
+        self.last_source = str(found.get("source") or self.last_source)
+
     async def after_turn(self, record: TurnRecord) -> None:
         self.call.commit(record.interrupted)
+        trace = dict(self.last_trace)
+        timings = record.timings.to_dict() if record.timings is not None else {}
+        trace.update(
+            {
+                "turn_id": self._turn_id,
+                "state_after": self.call.stage,
+                "identity_after": self.call.identity_confirmed,
+                "disclosed": self.call.disclosed,
+                "llm_first_token_ms": timings.get("llm_first_token_ms"),
+                "asr_final_ms": timings.get("asr_final_ms"),
+            }
+        )
+        if self._provider_status == "error":
+            trace["provider_status"] = "error"
+            trace["provider_called"] = True
+            trace["fallback_reason"] = "error"
+        self.last_trace = trace
+        if self.emit is not None and trace:
+            self.emit({"type": "turn_trace", **trace})
         if self.call.stage == "closed":
             self._write(record.interrupted)
 

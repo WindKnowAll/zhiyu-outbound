@@ -143,6 +143,7 @@ class QualificationCall:
     greeted: bool = False
     pending: Decision | None = None
     ticket_written: bool = False
+    last_resolution: dict | None = None
 
     def opening(self) -> str:
         return (
@@ -410,7 +411,7 @@ def classify(text: str) -> str:
         return "busy"
     if any(word in raw for word in ("回电", "再打给我", "回电话")):
         return "callback"
-    if any(word in raw for word in ("是的", "对的", "对对", "没错", "我是", "是我", "是这家", "是这个店", "我就是", "就是我", "本人")):
+    if any(word in raw for word in ("是的", "对的", "对对", "没错", "我是", "是我", "是这家", "是这个店", "我就是", "就是我", "本人", "是我们")):
         return "confirm"
     if any(word in raw for word in ("吗", "怎么", "为什么", "哪里", "什么", "能不能", "是不是", "多少")):
         return "question"
@@ -609,6 +610,34 @@ def strong_deny(text: str) -> bool:
     return False
 
 
+def strong_confirm(text: str) -> bool:
+    """口语里明确说是这家。否认优先，避免「不是我们」被看成确认。"""
+
+    if strong_deny(text):
+        return False
+    raw = text.strip()
+    return any(
+        word in raw
+        for word in (
+            "是我们公司",
+            "是我们店",
+            "是我们",
+            "是我是我",
+            "对对",
+            "是的",
+            "对的",
+            "没错",
+            "我是",
+            "是我",
+            "是这家",
+            "是这个店",
+            "我就是",
+            "就是我",
+            "本人",
+        )
+    )
+
+
 def parse_model_intent(raw: str) -> dict[str, str] | None:
     """模型输出不可信。只有能解析出允许的意图时才采用，否则当作没听懂。"""
 
@@ -649,17 +678,36 @@ def intent_system_prompt(call: QualificationCall) -> str:
 def resolve_turn(call: QualificationCall, user_text: str, model_raw: str) -> tuple[Decision, str]:
     """千问先判断意图。本地再决定状态和能说的话，模型不能自己授权披露。"""
 
+    state_before = call.stage
     parsed = parse_model_intent(model_raw)
+    supplied = (model_raw or "").strip()
+    if not supplied:
+        provider_status = "empty"
+    elif parsed is None:
+        provider_status = "unparsed"
+    else:
+        provider_status = "success"
     local = classify(user_text)
     source = "model" if parsed else "fallback"
+    fallback_reason = ""
     if asks_to_break_rules(user_text):
         intent = "unclear"
         source = "fallback"
+        fallback_reason = "break_rules"
     elif strong_deny(user_text):
         intent = "wrong_number"
         source = "fallback"
+        fallback_reason = "strong_deny"
+    elif strong_confirm(user_text) and parsed is not None and parsed["intent"] == "confirm":
+        intent = "confirm"
+        source = "model"
+    elif strong_confirm(user_text):
+        intent = "confirm"
+        source = "fallback"
+        fallback_reason = "strong_confirm" if parsed is not None else provider_status
     elif parsed is not None:
         intent = parsed["intent"]
+        source = "model"
     else:
         intent = {
             "confirm": "confirm",
@@ -671,6 +719,7 @@ def resolve_turn(call: QualificationCall, user_text: str, model_raw: str) -> tup
             "question": "question",
             "ack": "ack",
         }.get(local, "unclear")
+        fallback_reason = provider_status
     kind = {
         "confirm": "confirm",
         "deny": "wrong",
@@ -699,6 +748,18 @@ def resolve_turn(call: QualificationCall, user_text: str, model_raw: str) -> tup
     decision.speak = guard_customer_speech(decision.speak)
     decision.mode = source
     call.pending = decision
+    script_missing = decision.result == "缺话术转人工"
+    if script_missing:
+        fallback_reason = "script_missing" if not fallback_reason else f"{fallback_reason},script_missing"
+    call.last_resolution = {
+        "state_before": state_before,
+        "provider_called": True,
+        "provider_status": provider_status,
+        "intent": intent,
+        "fallback_reason": fallback_reason,
+        "script_missing": script_missing,
+        "source": source,
+    }
     return decision, source
 
 
