@@ -113,6 +113,10 @@ function handleEvent(event) {
   }
   if (event.type === "mock_ticket") {
     const ticket = event.ticket || {};
+    if (ticket.write_error) {
+      ticketEl.textContent = "模拟工单没有写入，不能当成已经成功：" + ticket.write_error;
+      return;
+    }
     const lines = [
       ticket.system || "本地模拟工单",
       "结果：" + (ticket.result || "—"),

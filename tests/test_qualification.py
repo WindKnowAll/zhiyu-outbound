@@ -273,13 +273,37 @@ def test_ticket_write_is_idempotent_and_keeps_a_copy_when_disk_fails(tmp_path):
     first = store.write(ticket)
     second = store.write(ticket)
     assert first["idempotent_hit"] is False
+    assert not first.get("write_error")
     assert second["idempotent_hit"] is True
-    assert len(list(tmp_path.glob("*.json"))) == 1
+    assert second["idempotency_key"] == "SIM-001:1:已知晓"
+    files = list(tmp_path.glob("*.json"))
+    assert len(files) == 1
+    assert ":" not in files[0].name
+    assert json.loads(files[0].read_text(encoding="utf-8"))["idempotency_key"] == "SIM-001:1:已知晓"
+    assert files[0].is_relative_to(tmp_path)
     blocked = tmp_path / "blocked"
     blocked.write_text("not a directory", encoding="utf-8")
     failed = TicketStore(blocked).write(ticket)
     assert failed["kept_in_memory"] is True
     assert failed["write_error"]
+    assert "idempotent_hit" not in failed
+
+
+def test_windows_file_lock_is_not_reported_as_saved(tmp_path, monkeypatch):
+    def locked(_src, dst):
+        raise PermissionError(13, "The process cannot access the file because it is being used by another process", str(dst))
+
+    monkeypatch.setattr("zhiyu.qualification.flow.os.replace", locked)
+    events: list[dict] = []
+    hooks = QualificationHooks(store=TicketStore(tmp_path), emit=events.append)
+    hooks.call.result = "已知晓"
+    hooks._write(False)
+    assert hooks.call.ticket_written is False
+    assert events[0]["ticket"]["kept_in_memory"] is True
+    assert "used by another process" in events[0]["ticket"]["write_error"]
+    assert list(tmp_path.glob("*.json")) == []
+    hooks._write(False)
+    assert hooks.call.ticket_written is False
 
 
 class _AudioRecognizer:

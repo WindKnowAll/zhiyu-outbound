@@ -7,10 +7,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from loguru import logger
 
 from zhiyu.qualification.catalog import Answer, Catalog, Scenario, load_catalog
 
@@ -413,24 +417,44 @@ def review_sentence(decision: Decision, sentence: str, *, identity_confirmed: bo
     return sentence, False
 
 
+_WINDOWS_ILLEGAL = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def ticket_filename(key: str) -> str:
+    """工单号里的冒号在 Windows 上不能做文件名。磁盘名换成安全形式，JSON 里仍保留原键。"""
+
+    text = str(key)
+    visible = _WINDOWS_ILLEGAL.sub("_", text).rstrip(" .")
+    if not visible:
+        visible = "ticket"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    return f"{visible[:40]}-{digest}.json"
+
+
 class TicketStore:
     def __init__(self, directory: Path) -> None:
         self.directory = directory
 
     def write(self, ticket: dict) -> dict:
-        key = str(ticket["idempotency_key"]).replace("/", "_")
-        path = self.directory / f"{key}.json"
+        path = self.directory / ticket_filename(str(ticket["idempotency_key"]))
         try:
-            if path.exists():
+            self.directory.mkdir(parents=True, exist_ok=True)
+            if path.is_file():
                 saved = json.loads(path.read_text(encoding="utf-8"))
                 saved["idempotent_hit"] = True
                 return saved
-            self.directory.mkdir(parents=True, exist_ok=True)
             body = dict(ticket)
             body["idempotent_hit"] = False
-            path.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary = self.directory / f".{path.name}.{os.getpid()}.tmp"
+            temporary.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+            try:
+                os.replace(temporary, path)
+            except OSError:
+                temporary.unlink(missing_ok=True)
+                raise
             return body
         except OSError as exc:
+            logger.warning("模拟工单没有写入磁盘：{}", exc)
             kept = dict(ticket)
             kept["write_error"] = str(exc)
             kept["kept_in_memory"] = True

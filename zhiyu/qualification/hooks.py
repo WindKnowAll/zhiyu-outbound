@@ -67,6 +67,10 @@ class QualificationHooks:
         if self.call.ticket_written:
             return
         ticket = self.store.write(self.call.to_ticket(interrupted=interrupted))
+        if ticket.get("write_error"):
+            if self.emit is not None:
+                self.emit({"type": "mock_ticket", "ticket": ticket})
+            return
         self.call.ticket_written = True
         if self.emit is not None:
             self.emit({"type": "mock_ticket", "ticket": ticket})
