@@ -6,7 +6,14 @@
 
 from __future__ import annotations
 
+import re
 from typing import AsyncIterator, Protocol
+
+_SECRET = re.compile(r"sk-[A-Za-z0-9_\-]{4,}|bearer\s+\S+", re.I)
+
+
+def redact_secrets(text: str) -> str:
+    return _SECRET.sub("***", text)
 
 
 class ProviderError(RuntimeError):

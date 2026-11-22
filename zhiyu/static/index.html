@@ -78,6 +78,8 @@
       <section class="review" id="review" aria-label="试听记录">
         <h2>试听记录</h2>
         <p class="scenario-note">合成商家的比赛模拟。录音默认不采集。保存和下载都停在这台电脑，不会自动发给任何人，也不会拿去自动训练。</p>
+        <label id="call-token-label" hidden>通话口令 <input id="call-token" type="password" autocomplete="off" /></label>
+        <label id="submit-token-label" hidden>提交令牌 <input id="submit-token" type="password" autocomplete="off" /></label>
         <label>测试代号 <input id="pseudonym" maxlength="16" autocomplete="off" placeholder="例如：甲" /></label>
         <label><input id="consent" type="checkbox" /> 我同意把这次的文字记录保存在这台电脑，供人工抽查</label>
         <label>期望 <textarea id="expected" rows="2"></textarea></label>

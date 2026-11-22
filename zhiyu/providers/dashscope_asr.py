@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 import websockets
 from loguru import logger
 
-from zhiyu.providers.base import ProviderError, Transcript
+from zhiyu.providers.base import ProviderError, Transcript, redact_secrets
 from zhiyu.providers.messages import (
     asr_run_task,
     authorization_header,
@@ -137,6 +137,7 @@ class DashScopeRecognizer:
         if self._reported:
             return
         self._reported = True
+        message = redact_secrets(message)
         logger.error(message)
         if self._error_handler is not None:
             await self._error_handler(message)

@@ -39,6 +39,8 @@ let userLines = [];
 let ticketSeen = false;
 let scenarios = [];
 let callLog = { turns: [], traces: [], timings: [] };
+let collectEnabled = false;
+let callGate = false;
 
 function setBanner(text, ok) {
   if (!text) {
@@ -225,7 +227,12 @@ function handleEvent(event) {
 async function poll() {
   if (!pcId) return;
   try {
-    const response = await fetch(`/api/sessions/${encodeURIComponent(pcId)}?cursor=${cursor}`);
+    const sessionHeaders = {};
+    const callToken = document.getElementById("call-token").value.trim();
+    if (callToken) sessionHeaders["X-Zhiyu-Call-Token"] = callToken;
+    const response = await fetch(`/api/sessions/${encodeURIComponent(pcId)}?cursor=${cursor}`, {
+      headers: sessionHeaders,
+    });
     if (response.status === 404) return;
     if (!response.ok) return;
     const body = await response.json();
@@ -295,9 +302,12 @@ function waitForIce(pc) {
 
 async function sendCandidate(candidate) {
   if (!pcId) return;
+  const patchHeaders = { "Content-Type": "application/json" };
+  const callToken = document.getElementById("call-token").value.trim();
+  if (callToken) patchHeaders["X-Zhiyu-Call-Token"] = callToken;
   await fetch("/api/offer", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: patchHeaders,
     body: JSON.stringify({
       pc_id: pcId,
       candidates: [
@@ -320,6 +330,9 @@ async function connect() {
   refreshControls();
   statusEl.textContent = "正在接通";
   buttonEl.disabled = true;
+  if (callGate && !document.getElementById("call-token").value.trim()) {
+    throw new Error("这台服务器要求通话口令。口令不在网页里，向管理员索取。没有口令不会连接模型。");
+  }
   if (!window.isSecureContext) {
     throw new Error(ZhiyuReview.mediaErrorText(null, false));
   }
@@ -366,9 +379,12 @@ async function connect() {
   await pc.setLocalDescription(await pc.createOffer());
   await waitForIce(pc);
 
+  const offerHeaders = { "Content-Type": "application/json" };
+  const callToken = document.getElementById("call-token").value.trim();
+  if (callToken) offerHeaders["X-Zhiyu-Call-Token"] = callToken;
   const response = await fetch("/api/offer", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: offerHeaders,
     body: JSON.stringify({
       sdp: pc.localDescription.sdp,
       type: pc.localDescription.type,
@@ -562,6 +578,13 @@ function reviewPayload() {
 
 async function refreshHistory() {
   const list = document.getElementById("history");
+  if (collectEnabled) {
+    list.replaceChildren();
+    const item = document.createElement("li");
+    item.textContent = "服务器上的全部记录只有管理员能看。提交成功后请立刻下载这一份。这里不显示编造的耗时。";
+    list.append(item);
+    return;
+  }
   const response = await fetch("/api/reviews");
   const body = await response.json();
   list.replaceChildren();
@@ -599,12 +622,36 @@ document.getElementById("preview-review").addEventListener("click", async () => 
 });
 
 document.getElementById("save-review").addEventListener("click", async () => {
-  const response = await fetch("/api/reviews", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(reviewPayload()),
-  });
-  document.getElementById("review-preview").textContent = await response.text();
+  const payload = JSON.stringify(reviewPayload());
+  let response;
+  if (collectEnabled) {
+    const token = document.getElementById("submit-token").value.trim();
+    if (!token) {
+      document.getElementById("review-preview").textContent = "集中收集已开启。请填写管理员单独给你的提交令牌。令牌不要写进网页文件。";
+      return;
+    }
+    response = await fetch("/api/collect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: payload,
+    });
+  } else {
+    response = await fetch("/api/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+    });
+  }
+  const text = await response.text();
+  document.getElementById("review-preview").textContent = text;
+  if (response.ok && collectEnabled) {
+    const blob = new Blob([text], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "zhiyu-review.json";
+    link.textContent = "下载刚提交的这一份";
+    document.getElementById("review-preview").append(document.createTextNode("\n"), link);
+  }
   if (response.ok) await refreshHistory();
 });
 
@@ -649,13 +696,18 @@ fetch("/api/eval-prompts")
 fetch("/api/collection")
   .then((response) => response.json())
   .then((body) => {
-    if (!body.enabled) {
+    collectEnabled = Boolean(body.enabled);
+    callGate = Boolean(body.call_gate);
+    if (!collectEnabled) {
       document.getElementById("hosting-note").textContent += " 集中收集接口当前关闭。";
+    } else {
+      document.getElementById("submit-token-label").hidden = false;
     }
+    if (callGate) document.getElementById("call-token-label").hidden = false;
+    return refreshHistory();
   })
-  .catch(() => {});
+  .catch(() => refreshHistory());
 
-refreshHistory().catch(() => {});
 refreshBargeMarks();
 
 if (typeof ZhiyuUI === "undefined") {

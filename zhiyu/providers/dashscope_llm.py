@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI
 
-from zhiyu.providers.base import ProviderError
+from zhiyu.providers.base import ProviderError, redact_secrets
 
 
 class DashScopeChatModel:
@@ -30,7 +30,7 @@ class DashScopeChatModel:
                 max_tokens=200,
             )
         except Exception as exc:
-            raise ProviderError(f"大模型请求失败：{exc}") from exc
+            raise ProviderError(f"大模型请求失败：{redact_secrets(str(exc))}") from exc
 
         try:
             async for chunk in response:
@@ -44,4 +44,4 @@ class DashScopeChatModel:
         except ProviderError:
             raise
         except Exception as exc:
-            raise ProviderError(f"大模型流式输出中断：{exc}") from exc
+            raise ProviderError(f"大模型流式输出中断：{redact_secrets(str(exc))}") from exc

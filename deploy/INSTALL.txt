@@ -1,0 +1,6 @@
+用 root 在解压后的目录执行：bash deploy/install.sh
+不要使用 bash -x。脚本不打印口令。
+装完后编辑 /etc/zhiyu/zhiyu.env 填写 DASHSCOPE_API_KEY，再 systemctl restart zhiyu。
+验收：bash deploy/accept.sh
+回滚：bash deploy/rollback.sh
+仅当 /opt/zhiyu/previous 存在，且只恢复程序，不删除 /var/lib/zhiyu。

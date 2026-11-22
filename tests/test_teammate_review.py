@@ -121,3 +121,29 @@ def test_collect_requires_admin_token_and_isolates_pseudonym(tmp_path):
         assert [item["pseudonym"] for item in only_jia.json()["reviews"]] == ["甲"]
         assert client.get("/api/collect").status_code == 401
         assert client.get("/api/collection").json()["public_ready"] is False
+        assert client.post("/api/reviews", json=_sample()).status_code == 403
+        assert client.get("/api/reviews").status_code == 403
+
+
+def test_call_gate_blocks_offer_before_any_model(tmp_path):
+    app = create_app(
+        load_settings({"DASHSCOPE_API_KEY": ""}),
+        preload_vad=False,
+        review_dir=tmp_path,
+        collect_enabled=False,
+        collect_token="",
+        collect_submit_token="",
+        call_token="call-token-16chars",
+    )
+    with TestClient(app) as client:
+        blocked = client.post("/api/offer", json={"sdp": "v=0", "type": "offer", "scenario_id": "36"})
+        assert blocked.status_code == 401
+        assert "sk-" not in blocked.text
+        assert "口令" in blocked.text
+        still = client.post(
+            "/api/offer",
+            json={"sdp": "v=0", "type": "offer", "scenario_id": "36"},
+            headers={"X-Zhiyu-Call-Token": "call-token-16chars"},
+        )
+        assert still.status_code == 503
+        assert "DASHSCOPE_API_KEY" in still.text

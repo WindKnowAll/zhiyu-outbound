@@ -15,7 +15,7 @@ from collections.abc import AsyncIterator
 import websockets
 from loguru import logger
 
-from zhiyu.providers.base import ProviderError
+from zhiyu.providers.base import ProviderError, redact_secrets
 from zhiyu.providers.messages import (
     authorization_header,
     dumps,
@@ -90,7 +90,7 @@ class DashScopeSynthesizer:
             raise
         except Exception as exc:
             await self.cancel()
-            raise ProviderError(f"语音合成连接失败：{exc}") from exc
+            raise ProviderError(f"语音合成连接失败：{redact_secrets(str(exc))}") from exc
         self._started = True
         self._reader = asyncio.create_task(self._read(), name="dashscope-tts")
 
@@ -169,4 +169,4 @@ class DashScopeSynthesizer:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            await self._audio.put(ProviderError(f"语音合成中断：{exc}"))
+            await self._audio.put(ProviderError(f"语音合成中断：{redact_secrets(str(exc))}"))

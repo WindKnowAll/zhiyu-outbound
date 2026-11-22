@@ -8,7 +8,7 @@
 
 同一台电脑上的浏览器可以选 68 个场景、看通话文字、预览后保存，再下载 JSON 交给负责人。保存要明确同意，拒绝录音。这不是自动训练。
 
-`/api/collect` 默认关闭，页面状态 `public_ready` 为 false。要同时设置 `ZHIYU_COLLECT_ENABLED=1`、至少 16 位且互不相同的 `ZHIYU_ADMIN_TOKEN` 和 `ZHIYU_SUBMIT_TOKEN`，才会打开。提交令牌只能写入。管理员令牌才能按代号查看。两个令牌相同或太短时，接口保持关闭。令牌不放进页面。
+`/api/collect` 默认关闭，页面状态 `public_ready` 为 false。要同时设置 `ZHIYU_COLLECT_ENABLED=1`、至少 16 位且互不相同的 `ZHIYU_ADMIN_TOKEN` 和 `ZHIYU_SUBMIT_TOKEN`，才会打开。提交令牌只能写入。管理员令牌才能按代号查看。两个令牌相同或太短时，接口保持关闭。令牌不放进页面。收集开启后，不带令牌的 `/api/reviews` 返回 403。若设置了至少 16 位的 `ZHIYU_CALL_TOKEN`，没有这把通话口令就不会进入识别、千问或合成。
 
 手机上的 `127.0.0.1` 指向手机自己。没有 HTTPS 时，手机浏览器通常不给麦克风。
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -137,6 +138,7 @@ def create_app(
     collect_enabled: bool | None = None,
     collect_token: str | None = None,
     collect_submit_token: str | None = None,
+    call_token: str | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     persona = load_persona()
@@ -145,6 +147,12 @@ def create_app(
     collect_on, admin_token, submit_token = collect_config(
         collect_enabled, collect_token, collect_submit_token
     )
+    if call_token is None:
+        call_token = os.environ.get("ZHIYU_CALL_TOKEN", "")
+    call_token = call_token.strip()
+    if call_token and len(call_token) < 16:
+        logger.warning("ZHIYU_CALL_TOKEN 短于 16 位，已忽略，没有启用通话口令。")
+        call_token = ""
     local_gate = RateGate(30, 600)
     collect_gate = RateGate(10, 60)
     ice_servers = [IceServer(urls=url) for url in settings.ice_servers] or None
@@ -206,7 +214,9 @@ def create_app(
         }
 
     @app.get("/api/sessions/{pc_id}")
-    async def session_events(pc_id: str, cursor: int = 0) -> dict:
+    async def session_events(pc_id: str, request: Request, cursor: int = 0) -> dict:
+        if call_token and request.headers.get("x-zhiyu-call-token", "") != call_token:
+            raise HTTPException(status_code=401, detail="需要通话口令。")
         session = hub.get(pc_id)
         if session is None:
             raise HTTPException(status_code=404, detail="这通通话还不存在，或已经不在内存里。")
@@ -224,6 +234,8 @@ def create_app(
             vad_override = parse_call_vad(vad_raw, settings)
         except (ScenarioRejected, ValueError) as exc:
             return JSONResponse(status_code=400, content={"message": str(exc)})
+        if call_token and request.headers.get("x-zhiyu-call-token", "") != call_token:
+            return JSONResponse(status_code=401, content={"message": "需要通话口令。没有口令不会连接模型。"})
         if not settings.credentials_ready:
             return JSONResponse(status_code=503, content=status_payload(settings))
         rtc_request = SmallWebRTCRequest.from_dict(payload)
@@ -244,6 +256,8 @@ def create_app(
 
     @app.patch("/api/offer")
     async def ice_candidate(request: Request) -> dict:
+        if call_token and request.headers.get("x-zhiyu-call-token", "") != call_token:
+            raise HTTPException(status_code=401, detail="需要通话口令。")
         payload = await request.json()
         candidates = [
             IceCandidate(
@@ -290,6 +304,7 @@ def create_app(
             "enabled": collect_on,
             "mode": "central_admin" if collect_on else "local_export",
             "public_ready": False,
+            "call_gate": bool(call_token),
             "https_terminated_here": False,
             "raw_audio": False,
             "autosend": False,
@@ -308,8 +323,19 @@ def create_app(
             return JSONResponse(status_code=400, content={"message": str(exc)})
         return JSONResponse(body)
 
+    def _reviews_closed() -> JSONResponse | None:
+        if not collect_on:
+            return None
+        return JSONResponse(
+            status_code=403,
+            content={"message": "集中收集已开启。写入请使用提交令牌访问 /api/collect。列表仅管理员可看。"},
+        )
+
     @app.post("/api/reviews")
     async def review_save(request: Request) -> JSONResponse:
+        closed = _reviews_closed()
+        if closed is not None:
+            return closed
         payload = await request.json()
         who = str(payload.get("pseudonym") or "")
         if not local_gate.allow(who or request.client.host if request.client else "local"):
@@ -320,12 +346,18 @@ def create_app(
             return JSONResponse(status_code=400, content={"message": str(exc)})
         return JSONResponse(saved)
 
-    @app.get("/api/reviews")
-    async def review_list(pseudonym: str = "") -> dict:
+    @app.get("/api/reviews", response_model=None)
+    async def review_list(pseudonym: str = ""):
+        closed = _reviews_closed()
+        if closed is not None:
+            return closed
         return {"reviews": reviews.list_reviews(pseudonym or None), "raw_audio": False}
 
     @app.get("/api/reviews/{review_id}")
     async def review_detail(review_id: str) -> JSONResponse:
+        closed = _reviews_closed()
+        if closed is not None:
+            return closed
         try:
             found = reviews.get(review_id)
         except ReviewRejected as exc:
@@ -336,6 +368,9 @@ def create_app(
 
     @app.get("/api/reviews/{review_id}/export")
     async def review_export(review_id: str) -> JSONResponse:
+        closed = _reviews_closed()
+        if closed is not None:
+            return closed
         try:
             found = reviews.get(review_id)
         except ReviewRejected as exc:
@@ -349,6 +384,9 @@ def create_app(
 
     @app.delete("/api/reviews/{review_id}")
     async def review_delete(review_id: str) -> JSONResponse:
+        closed = _reviews_closed()
+        if closed is not None:
+            return closed
         try:
             removed = reviews.delete(review_id)
         except ReviewRejected as exc:
@@ -359,6 +397,9 @@ def create_app(
 
     @app.post("/api/reviews/import")
     async def review_import(request: Request) -> JSONResponse:
+        closed = _reviews_closed()
+        if closed is not None:
+            return closed
         if not local_gate.allow("import"):
             return JSONResponse(status_code=429, content={"message": "导入太频繁，请稍后再试。"})
         try:
