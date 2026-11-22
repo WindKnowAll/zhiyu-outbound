@@ -36,6 +36,13 @@ class Settings:
     tts_voice: str
     tts_sample_rate: int
     ice_servers: tuple[str, ...]
+    turn_secret: str
+    turn_public_host: str
+    turn_listen_host: str
+    turn_port: int
+    turn_ttl: int
+    turn_min_port: int
+    turn_max_port: int
     vad_confidence: float
     vad_start_secs: float
     vad_stop_secs: float
@@ -170,6 +177,13 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         tts_voice=_text(source, "DASHSCOPE_TTS_VOICE", "longxiaochun_v2"),
         tts_sample_rate=_int(source, "DASHSCOPE_TTS_SAMPLE_RATE", 24000),
         ice_servers=ice,
+        turn_secret=_text(source, "ZHIYU_TURN_SECRET"),
+        turn_public_host=_text(source, "ZHIYU_TURN_PUBLIC_HOST"),
+        turn_listen_host=_text(source, "ZHIYU_TURN_LISTEN_HOST"),
+        turn_port=_int(source, "ZHIYU_TURN_PORT", 3478),
+        turn_ttl=_int(source, "ZHIYU_TURN_TTL", 600),
+        turn_min_port=_int(source, "ZHIYU_TURN_MIN_PORT", 49152),
+        turn_max_port=_int(source, "ZHIYU_TURN_MAX_PORT", 49251),
         vad_confidence=_float(source, "VAD_CONFIDENCE", 0.7),
         vad_start_secs=_float(source, "VAD_START_SECS", 0.2),
         vad_stop_secs=_float(source, "VAD_STOP_SECS", 0.2),
@@ -196,6 +210,14 @@ def legacy_domain_warning() -> str:
     )
 
 
+def _turn_enabled(settings: Settings) -> bool:
+    return (
+        len(settings.turn_secret) >= 16
+        and bool(settings.turn_public_host)
+        and bool(settings.turn_listen_host)
+    )
+
+
 def status_payload(settings: Settings) -> dict:
     """给网页和健康检查用。只说明密钥在不在，不去联网验证。"""
 
@@ -208,6 +230,10 @@ def status_payload(settings: Settings) -> dict:
         "dashscope_ws_url": settings.dashscope_ws_url,
         "dashscope_endpoint_source": settings.dashscope_endpoint_source,
         "ice_servers": list(settings.ice_servers),
+        "turn_enabled": _turn_enabled(settings),
+        "turn_public_host": settings.turn_public_host if _turn_enabled(settings) else "",
+        "turn_relay_min": settings.turn_min_port,
+        "turn_relay_max": settings.turn_max_port,
     }
     missing = settings.missing_keys
     if missing:

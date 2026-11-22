@@ -16,11 +16,15 @@ case "$ROOT" in
   /etc|/etc/*) echo "拒绝写入 /etc" >&2; exit 1 ;;
 esac
 FILES=(
+  zhiyu/config.py
   zhiyu/server.py
+  zhiyu/turn_ice.py
   zhiyu/static/app.js
   zhiyu/static/call_ui.js
   deploy/patch-apply.sh
   deploy/patch-rollback.sh
+  deploy/coturn-apply.sh
+  deploy/coturn-rollback.sh
 )
 for rel in "${FILES[@]}"; do
   if [[ "$rel" == *.env || "$rel" == *zhiyu.env ]]; then
@@ -44,8 +48,15 @@ for rel in "${FILES[@]}"; do
   install -m 0644 "$PATCH_ROOT/$rel" "$ROOT/$rel"
 done
 systemctl restart zhiyu
-sleep 2
-if ! curl -fsS http://127.0.0.1:7860/api/build > /tmp/zhiyu-patch-build.json; then
+ok=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  if curl -fsS http://127.0.0.1:7860/api/build > /tmp/zhiyu-patch-build.json; then
+    ok=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$ok" != 1 ]]; then
   echo "新进程没有起来。环境、数据和证书没有改。可运行 deploy/patch-rollback.sh。" >&2
   exit 1
 fi
@@ -53,7 +64,7 @@ python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-build.json", encoding="utf-8"))
 assert body.get("page_version") == "v1.8", body.get("page_version")
-assert body.get("build_hash") == "4eaa83cd1a58", body.get("build_hash")
+assert body.get("build_hash") == "63b500ac54fc", body.get("build_hash")
 print("page_version=v1.8 build_hash=" + str(body.get("build_hash")))
 PY
 rm -f /tmp/zhiyu-patch-build.json

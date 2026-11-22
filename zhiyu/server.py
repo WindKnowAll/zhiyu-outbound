@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import html
 import json
@@ -51,6 +52,7 @@ from zhiyu.teammate.review import (
     preview_review,
 )
 from zhiyu.transport.bot import run_bot
+from zhiyu.turn_ice import TurnConfig
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ROOT = STATIC_DIR.parent.parent
@@ -171,8 +173,20 @@ def create_app(
         call_token = ""
     local_gate = RateGate(30, 600)
     collect_gate = RateGate(10, 60)
-    ice_servers = [IceServer(urls=url) for url in settings.ice_servers] or None
-    webrtc = SmallWebRTCRequestHandler(ice_servers=ice_servers)
+    ice_gate = RateGate(30, 60)
+    turn = TurnConfig(
+        secret=settings.turn_secret,
+        public_host=settings.turn_public_host,
+        listen_host=settings.turn_listen_host,
+        port=settings.turn_port,
+        ttl_seconds=settings.turn_ttl,
+        min_port=settings.turn_min_port,
+        max_port=settings.turn_max_port,
+    )
+    if settings.turn_secret and not turn.enabled:
+        logger.warning("TURN 密钥或地址不完整，没有启用。没有把密钥写进日志。")
+    ice_lock = asyncio.Lock()
+    webrtc = SmallWebRTCRequestHandler(ice_servers=turn.aiortc_servers(settings.ice_servers) or None)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -267,7 +281,9 @@ def create_app(
                 vad_override,
             )
 
-        answer = await webrtc.handle_web_request(rtc_request, start_bot)
+        async with ice_lock:
+            webrtc.update_ice_servers(turn.aiortc_servers(settings.ice_servers) or None)
+            answer = await webrtc.handle_web_request(rtc_request, start_bot)
         sdp = answer.get("sdp") if isinstance(answer, dict) else ""
         if isinstance(sdp, str) and sdp:
             counts = candidate_kind_counts(sdp.splitlines())
@@ -333,6 +349,22 @@ def create_app(
         token = _bearer(request)
         if token not in {admin_token, submit_token}:
             raise HTTPException(status_code=401, detail="需要提交令牌。")
+
+    @app.get("/api/ice")
+    async def ice(request: Request) -> JSONResponse:
+        if call_token and request.headers.get("x-zhiyu-call-token", "") != call_token:
+            return JSONResponse(status_code=401, content={"message": "需要通话口令。没有口令不会分配中继。"})
+        who = request.client.host if request.client else "ice"
+        if not ice_gate.allow(who):
+            return JSONResponse(status_code=429, content={"message": "申请太频繁，请稍后再试。"})
+        servers = turn.browser_servers(settings.ice_servers)
+        return JSONResponse(
+            {
+                "ice_servers": servers,
+                "ttl_seconds": turn.ttl_seconds if turn.enabled else 0,
+                "turn_enabled": turn.enabled,
+            }
+        )
 
     @app.get("/api/voices")
     async def voices() -> dict:

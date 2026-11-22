@@ -268,11 +268,30 @@ function stopPolling() {
   }
 }
 
+function iceServerFrom(item) {
+  if (typeof item === "string") return { urls: item };
+  const server = { urls: item.urls };
+  if (item.username) server.username = item.username;
+  if (item.credential) server.credential = item.credential;
+  return server;
+}
+
+async function loadIceServers() {
+  const headers = {};
+  const callToken = document.getElementById("call-token").value.trim();
+  if (callToken) headers["X-Zhiyu-Call-Token"] = callToken;
+  const response = await fetch("/api/ice", { headers });
+  if (!response.ok) return;
+  const body = await response.json();
+  if (!Array.isArray(body.ice_servers) || !body.ice_servers.length) return;
+  iceServers = body.ice_servers.map(iceServerFrom);
+}
+
 async function loadStatus() {
   const response = await fetch("/api/status");
   const body = await response.json();
   if (Array.isArray(body.ice_servers) && body.ice_servers.length) {
-    iceServers = body.ice_servers.map((url) => ({ urls: url }));
+    iceServers = body.ice_servers.map((item) => (typeof item === "string" ? { urls: item } : { urls: item.urls }));
   }
   setBanner(body.message, body.ok);
   ready = Boolean(body.ok);
@@ -339,6 +358,7 @@ async function connect() {
   if (!window.isSecureContext) {
     throw new Error(ZhiyuReview.mediaErrorText(null, false));
   }
+  await loadIceServers();
   let stream;
   try {
     const audio = ZhiyuReview.audioConstraints(
