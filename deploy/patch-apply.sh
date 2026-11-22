@@ -22,7 +22,6 @@ FILES=(
   zhiyu/static/app.js
   zhiyu/static/call_ui.js
   deploy/patch-apply.sh
-  deploy/patch-rollback.sh
   deploy/coturn-apply.sh
   deploy/coturn-rollback.sh
 )
