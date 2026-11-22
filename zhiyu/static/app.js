@@ -32,6 +32,7 @@ let starting = false;
 let iceServers = [{ urls: "stun:stun.qq.com:3478" }];
 let peer = null;
 let pcId = null;
+let boundCall = null;
 let cursor = 0;
 let pollTimer = null;
 let botLine = null;
@@ -403,6 +404,7 @@ async function connect() {
     throw new Error(answer.message || answer.detail || "接通失败");
   }
   pcId = answer.pc_id;
+  rememberCall(pcId);
   cursor = 0;
   await pc.setRemoteDescription(answer);
   for (const candidate of pending) {
@@ -437,6 +439,7 @@ async function hangup() {
   stopPolling();
   pcId = null;
   starting = false;
+  showIncidentCall();
   buttonEl.textContent = "开始通话";
   buttonEl.classList.remove("hangup");
   statusEl.textContent = "已挂断";
@@ -544,6 +547,60 @@ function turnsForReview() {
     if (assistants[index]) turns.push(assistants[index]);
   }
   return turns;
+}
+
+function loadBoundCall() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem("zhiyu-last-call") || "null");
+    if (parsed && typeof parsed.id === "string" && parsed.id) boundCall = parsed;
+  } catch (error) {
+    boundCall = null;
+  }
+}
+
+function rememberCall(id) {
+  boundCall = { id: String(id) };
+  try {
+    sessionStorage.setItem("zhiyu-last-call", JSON.stringify(boundCall));
+  } catch (error) {
+    /* 这一页仍用内存里的编号。 */
+  }
+  showIncidentCall();
+}
+
+function showIncidentCall() {
+  const note = document.getElementById("incident-call");
+  if (!note || typeof ZhiyuReview === "undefined") return;
+  const binding = ZhiyuReview.incidentBinding(pcId, boundCall && boundCall.id);
+  if (binding.callLink === "current") {
+    note.textContent = "将关联正在进行的这通。下一通接通后不会再写到这一通。";
+  } else if (binding.callLink === "recent") {
+    note.textContent = "将关联刚才这通。刷新后页面不再留着句子，提交仍带这通编号。下一通接通后会改绑。";
+  } else {
+    note.textContent = "还没有通话。提交会标明「无通话」，不会编造一通电话。";
+  }
+}
+
+function incidentSlot(binding) {
+  const suffix = binding.callLink === "no_call" ? "none" : binding.sessionId;
+  return "zhiyu-incident:" + suffix;
+}
+
+function currentIncidentKey(binding, renew) {
+  const slot = incidentSlot(binding);
+  let existing = "";
+  try {
+    existing = sessionStorage.getItem(slot) || "";
+  } catch (error) {
+    existing = "";
+  }
+  const key = ZhiyuReview.incidentKey(existing, renew, () => crypto.randomUUID());
+  try {
+    sessionStorage.setItem(slot, key);
+  } catch (error) {
+    /* 编号留在这次提交里。 */
+  }
+  return key;
 }
 
 function reviewPayload() {
@@ -703,14 +760,110 @@ fetch("/api/collection")
     if (!collectEnabled) {
       document.getElementById("hosting-note").textContent += " 集中收集接口当前关闭。";
     } else {
-      document.getElementById("submit-token-label").hidden = false;
+      const tokenLabel = document.getElementById("submit-token-label");
+      tokenLabel.hidden = false;
+      if (!document.getElementById("incident-form").hidden) {
+        document.getElementById("incident-form").insertBefore(tokenLabel, document.getElementById("incident-send"));
+      }
     }
-    if (callGate) document.getElementById("call-token-label").hidden = false;
+    if (callGate) {
+      document.getElementById("call-token-label").hidden = false;
+      document.getElementById("call-token-note").hidden = false;
+    }
     return refreshHistory();
   })
   .catch(() => refreshHistory());
 
+document.getElementById("incident-open").addEventListener("click", () => {
+  const form = document.getElementById("incident-form");
+  form.hidden = false;
+  if (collectEnabled) {
+    const tokenLabel = document.getElementById("submit-token-label");
+    tokenLabel.hidden = false;
+    form.insertBefore(tokenLabel, document.getElementById("incident-send"));
+  }
+  showIncidentCall();
+});
+
+document.getElementById("incident-again").addEventListener("click", () => {
+  sendIncident(true);
+});
+
+document.getElementById("incident-send").addEventListener("click", () => {
+  sendIncident(false);
+});
+
+async function sendIncident(renew) {
+  const result = document.getElementById("incident-result");
+  if (starting) {
+    result.textContent = "正在接通下一通。等这通有了编号再提交，避免写到上一通。";
+    return;
+  }
+  const binding = ZhiyuReview.incidentBinding(pcId, boundCall && boundCall.id);
+  const what = document.getElementById("incident-what").value.trim();
+  const how = document.getElementById("incident-how").value.trim();
+  if (!what && !how) {
+    result.textContent = "请先写发生了什么，或建议怎样改。";
+    return;
+  }
+  if (!document.getElementById("incident-consent").checked) {
+    result.textContent = "需要勾选同意才保存。不会自动修改系统。";
+    return;
+  }
+  const name = document.getElementById("incident-pseudonym").value.trim();
+  if (!name) {
+    result.textContent = "请填一个短代号。不要写手机号。";
+    return;
+  }
+  const payload = reviewPayload();
+  payload.consent = true;
+  payload.pseudonym = name;
+  payload.session_id = binding.sessionId;
+  payload.call_link = binding.callLink;
+  payload.idempotency_key = currentIncidentKey(binding, renew);
+  payload.feedback.incident = what;
+  payload.feedback.suggestion = how;
+  let response;
+  if (collectEnabled) {
+    const token = document.getElementById("submit-token").value.trim();
+    if (!token) {
+      result.textContent = "集中收集已开启。请填写管理员单独给你的提交令牌。令牌不要写进网页。";
+      return;
+    }
+    response = await fetch("/api/collect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify(payload),
+    });
+  } else {
+    response = await fetch("/api/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+  let body = {};
+  try {
+    body = await response.json();
+  } catch (error) {
+    body = {};
+  }
+  if (!response.ok) {
+    result.textContent = body.message || "没有保存。";
+    return;
+  }
+  const linkText = binding.callLink === "current" ? "正在进行的这通" : binding.callLink === "recent" ? "刚才这通" : "无通话";
+  const again = body.duplicate ? "这一条已经在服务器上，没有另写一条。" : "已保存。";
+  result.textContent = again + "关联：" + linkText + "。只给管理员人工查看，不会自动改系统，也不会发到别的平台。";
+  document.getElementById("incident-again").hidden = false;
+}
+
+loadBoundCall();
+showIncidentCall();
 refreshBargeMarks();
+if (location.hash === "#incident-panel" || location.hash === "#incident-open") {
+  document.getElementById("incident-open").click();
+}
 
 if (typeof ZhiyuUI === "undefined") {
   zhiyuPageFailed("页面脚本没有执行。页脚必须是 v1.8，否则不是这次的服务。");

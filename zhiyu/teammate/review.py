@@ -29,8 +29,16 @@ EVAL_PROMPTS = (
         "status": "criteria_only",
     },
 )
-_SECRET = re.compile(r"sk-|api[_-]?key|authorization|bearer\s+", re.I)
+_SECRET = re.compile(
+    r"sk-|api[_-]?key|authorization|bearer\s+|ZHIYU_(?:ADMIN|SUBMIT|CALL)_TOKEN",
+    re.I,
+)
+_MARKUP = re.compile(r"<\s*/?\s*script|javascript\s*:|onerror\s*=|onload\s*=", re.I)
 _PHONE = re.compile(r"\d{7,}")
+_IDEMPOTENCY = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
+CALL_LINKS = {"current", "recent", "no_call", "unspecified"}
 
 
 class ReviewRejected(ValueError):
@@ -81,12 +89,20 @@ def eval_prompts() -> list[dict]:
 def _text(value: object, limit: int) -> str:
     if not isinstance(value, str):
         raise ReviewRejected("文本字段必须是字符串。")
-    cleaned = value.strip()
+    cleaned = "".join(ch for ch in value.strip() if ch in "\n\t" or ord(ch) >= 32)
     if len(cleaned) > limit:
         raise ReviewRejected("文本超过长度。")
     if _SECRET.search(cleaned):
         raise ReviewRejected("记录里不能带密钥或口令。")
+    if _MARKUP.search(cleaned):
+        raise ReviewRejected("记录里不能带脚本。")
     return cleaned
+
+
+def _optional_text(value: object, limit: int) -> str:
+    if value is None:
+        return ""
+    return _text(value, limit)
 
 
 def _pseudonym(value: object) -> str:
@@ -175,6 +191,12 @@ def validate_review(payload: object) -> dict:
     feedback = payload.get("feedback") or {}
     if not isinstance(feedback, dict):
         raise ReviewRejected("反馈必须是对象。")
+    call_link = payload.get("call_link") or "unspecified"
+    if call_link not in CALL_LINKS:
+        raise ReviewRejected("通话关联不正确。")
+    idempotency_key = payload.get("idempotency_key") or ""
+    if idempotency_key and not _IDEMPOTENCY.fullmatch(str(idempotency_key)):
+        raise ReviewRejected("提交编号不正确。")
     audio = payload.get("audio_constraints") or {}
     vad = payload.get("vad") or {}
     record = {
@@ -193,12 +215,16 @@ def validate_review(payload: object) -> dict:
             "script_complete": bool(scenario.get("script_complete")),
         },
         "session_id": _text(str(payload.get("session_id") or ""), 80),
+        "call_link": call_link,
+        "idempotency_key": str(idempotency_key),
         "turns": turns,
         "provider_traces": traces,
         "stage_timings": timings,
         "feedback": {
-            "expected": _text(str(feedback.get("expected") or ""), 2000),
-            "actual": _text(str(feedback.get("actual") or ""), 2000),
+            "expected": _optional_text(feedback.get("expected") or "", 2000),
+            "actual": _optional_text(feedback.get("actual") or "", 2000),
+            "incident": _optional_text(feedback.get("incident") or "", 2000),
+            "suggestion": _optional_text(feedback.get("suggestion") or "", 2000),
         },
         "audio_constraints": {
             "echoCancellation": bool(audio.get("echoCancellation")),
@@ -211,6 +237,7 @@ def validate_review(payload: object) -> dict:
         },
         "false_barge_in_count": sum(1 for item in turns if item["false_barge_in"]),
         "collection": "local_export_not_rsi",
+        "follow_up": "human_review_only",
     }
     return record
 
@@ -232,19 +259,38 @@ class ReviewStore:
 
     def save(self, payload: object) -> dict:
         record = validate_review(payload)
-        record["id"] = str(uuid.uuid4())
-        record["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        record["imported"] = False
-        self._write(record)
-        return record
+        return self._store(record, imported=False)
 
     def import_record(self, payload: object) -> dict:
         record = validate_review(payload)
-        record["id"] = str(uuid.uuid4())
+        return self._store(record, imported=True)
+
+    def _store(self, record: dict, *, imported: bool) -> dict:
+        key = record.get("idempotency_key") or ""
         record["saved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        record["imported"] = True
-        self._write(record)
+        record["imported"] = imported
+        with self._lock:
+            if key:
+                existing = self._existing_key(key)
+                if existing is not None:
+                    copy = dict(existing)
+                    copy["duplicate"] = True
+                    return copy
+            record["id"] = str(uuid.uuid4())
+            self._write_unlocked(record)
         return record
+
+    def _existing_key(self, key: str) -> dict | None:
+        if not self.directory.is_dir():
+            return None
+        for path in self.directory.glob("*.json"):
+            try:
+                item = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if item.get("idempotency_key") == key:
+                return item
+        return None
 
     def list_reviews(self, pseudonym: str | None = None) -> list[dict]:
         rows = []
@@ -257,6 +303,12 @@ class ReviewStore:
                     continue
                 if pseudonym and item.get("pseudonym") != pseudonym:
                     continue
+                feedback = item.get("feedback") or {}
+                incident = ""
+                suggestion = ""
+                if isinstance(feedback, dict):
+                    incident = str(feedback.get("incident") or "")
+                    suggestion = str(feedback.get("suggestion") or "")
                 rows.append(
                     {
                         "id": item.get("id"),
@@ -267,6 +319,9 @@ class ReviewStore:
                         "turn_count": len(item.get("turns") or []),
                         "imported": bool(item.get("imported")),
                         "raw_audio": False,
+                        "call_link": item.get("call_link") or "unspecified",
+                        "session_id": item.get("session_id") or "",
+                        "has_incident": bool(incident.strip() or suggestion.strip()),
                     }
                 )
         return rows
@@ -290,11 +345,34 @@ class ReviewStore:
             raise ReviewRejected("记录编号不正确。")
         return self.directory / f"{review_id}.json"
 
+    def export_records(self, *, incidents_only: bool = False) -> list[dict]:
+        rows = []
+        for item in self.list_reviews():
+            found = self.get(str(item.get("id") or ""))
+            if not isinstance(found, dict):
+                continue
+            if incidents_only and not item.get("has_incident"):
+                continue
+            rows.append(export_view(found))
+        return rows
+
     def _write(self, record: dict) -> None:
+        with self._lock:
+            self._write_unlocked(record)
+
+    def _write_unlocked(self, record: dict) -> None:
         path = self._path(record["id"])
         payload = json.dumps(record, ensure_ascii=False, indent=2).encode("utf-8")
-        with self._lock:
-            self.directory.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(".tmp")
-            temporary.write_bytes(payload)
-            os.replace(temporary, path)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".tmp")
+        temporary.write_bytes(payload)
+        os.replace(temporary, path)
+
+
+def export_view(record: dict) -> dict:
+    """给管理员下载的副本。去掉令牌字段，不带录音。"""
+
+    hidden = {"token", "authorization", "api_key", "admin_token", "submit_token", "call_token"}
+    cleaned = {key: value for key, value in record.items() if key not in hidden and key != "duplicate"}
+    cleaned["raw_audio"] = False
+    return cleaned

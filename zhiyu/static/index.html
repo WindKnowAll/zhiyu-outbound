@@ -32,6 +32,8 @@
           <button id="random" type="button" disabled>随机开始通话</button>
         </div>
         <p class="scenario-note">随机开始会从全部驳回场景里抽一个，并立刻申请麦克风、接通这通电话。</p>
+        <label id="call-token-label" hidden>通话口令 <input id="call-token" type="password" autocomplete="off" /></label>
+        <p id="call-token-note" class="scenario-note" hidden>口令不写在网页里。向管理员索取后填在这里再开始。没有口令不会连接模型。</p>
       </section>
 
       <section class="audio-setup" aria-label="麦克风与开口检测">
@@ -80,7 +82,6 @@
       <section class="review" aria-label="试听记录">
         <h2>试听记录</h2>
         <p class="scenario-note">合成商家的比赛模拟。录音默认不采集。保存和下载都停在这台电脑，不会自动发给任何人，也不会拿去自动训练。</p>
-        <label id="call-token-label" hidden>通话口令 <input id="call-token" type="password" autocomplete="off" /></label>
         <label id="submit-token-label" hidden>提交令牌 <input id="submit-token" type="password" autocomplete="off" /></label>
         <label>测试代号 <input id="pseudonym" maxlength="16" autocomplete="off" placeholder="例如：甲" /></label>
         <label><input id="consent" type="checkbox" /> 我同意把这次的文字记录保存在这台电脑，供人工抽查</label>
@@ -102,6 +103,20 @@
       <section class="eval-keep" aria-label="人工抽查例句">
         <h3>人工抽查例句</h3>
         <ul id="eval-prompts"></ul>
+      </section>
+      <section class="incident-keep" id="incident-panel" aria-label="异常情况">
+        <h3>异常情况</h3>
+        <p id="incident-call" class="scenario-note">还没有通话。提交会标明「无通话」，不会编造一通电话。</p>
+        <button id="incident-open" type="button">异常情况提交</button>
+        <div id="incident-form" hidden>
+          <label>发生了什么 <textarea id="incident-what" maxlength="2000" rows="3"></textarea></label>
+          <label>建议改哪里、怎样改 <textarea id="incident-how" maxlength="2000" rows="3"></textarea></label>
+          <label>代号 <input id="incident-pseudonym" maxlength="16" autocomplete="off" placeholder="例如：甲" /></label>
+          <label><input id="incident-consent" type="checkbox" /> 我同意把这段文字和关联的通话文字交给管理员做人工分析。不含录音，也不会自动修改系统。</label>
+          <button id="incident-send" type="button">提交异常</button>
+          <button id="incident-again" type="button" hidden>再报一条</button>
+          <p id="incident-result" class="scenario-note"></p>
+        </div>
       </section>
       </div>
       </div>

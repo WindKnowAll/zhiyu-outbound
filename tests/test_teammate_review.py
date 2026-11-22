@@ -130,6 +130,70 @@ def test_collect_requires_admin_token_and_isolates_pseudonym(tmp_path):
         assert client.get("/api/reviews").status_code == 403
 
 
+def test_incident_dedupes_and_admin_export_hides_tokens(tmp_path):
+    app = create_app(
+        load_settings({"DASHSCOPE_API_KEY": ""}),
+        preload_vad=False,
+        review_dir=tmp_path,
+        collect_enabled=True,
+        collect_token="admin-token-16xx",
+        collect_submit_token="submit-token-16x",
+        call_token="call-token-16chars",
+    )
+    incident = _sample()
+    incident["call_link"] = "no_call"
+    incident["session_id"] = ""
+    incident["idempotency_key"] = "11111111-1111-1111-1111-111111111111"
+    incident["feedback"] = {
+        "expected": "",
+        "actual": "",
+        "incident": "播到一半停了",
+        "suggestion": "先停再说明原因",
+    }
+    leaked = _sample()
+    leaked["feedback"] = {"incident": "口令是 submit-token-16x", "expected": "", "actual": ""}
+    scripted = _sample()
+    scripted["feedback"] = {"incident": "<script>alert(1)</script>", "expected": "", "actual": ""}
+    old = _sample()
+    with TestClient(app) as client:
+        submit = {"Authorization": "Bearer submit-token-16x"}
+        admin = {"Authorization": "Bearer admin-token-16xx"}
+        kept = validate_review(old)
+        assert kept["call_link"] == "unspecified"
+        assert kept["feedback"]["incident"] == ""
+        assert kept["follow_up"] == "human_review_only"
+        first = client.post("/api/collect", json=incident, headers=submit)
+        second = client.post("/api/collect", json=incident, headers=submit)
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["id"] == second.json()["id"]
+        assert second.json()["duplicate"] is True
+        assert second.json()["call_link"] == "no_call"
+        assert len(list(tmp_path.glob("*.json"))) == 1
+        stored = client.get(f"/api/collect/{first.json()['id']}", headers=admin)
+        assert stored.json()["raw_audio"] is False
+        assert stored.json()["feedback"]["incident"] == "播到一半停了"
+        assert "submit-token-16x" not in stored.text
+        assert "admin-token-16xx" not in stored.text
+        assert client.get("/api/collect/export", headers=submit).status_code == 401
+        exported = client.get("/api/collect/export", params={"only": "incident"}, headers=admin)
+        assert exported.status_code == 200
+        assert "attachment" in exported.headers["content-disposition"]
+        assert exported.json()["rsi"] == "human_review_only"
+        assert exported.json()["raw_audio"] is False
+        assert exported.json()["reviews"][0]["feedback"]["suggestion"] == "先停再说明原因"
+        assert "submit-token-16x" not in exported.text
+        assert "call-token-16chars" not in exported.text
+        listed = client.get("/api/collect", headers=admin)
+        assert listed.json()["reviews"][0]["has_incident"] is True
+        assert listed.json()["reviews"][0]["call_link"] == "no_call"
+        assert client.post("/api/collect", json=leaked, headers=submit).status_code == 400
+        assert client.post("/api/collect", json=scripted, headers=submit).status_code == 400
+        bad_link = _sample()
+        bad_link["call_link"] = "next"
+        assert client.post("/api/collect", json=bad_link, headers=submit).status_code == 400
+
+
 def test_call_gate_blocks_offer_before_any_model(tmp_path):
     app = create_app(
         load_settings({"DASHSCOPE_API_KEY": ""}),

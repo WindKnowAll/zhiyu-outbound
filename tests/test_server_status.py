@@ -32,6 +32,11 @@ def test_homepage_and_status_open_without_a_key(monkeypatch):
         assert "echoCancellation" in script.text
         assert "noiseSuppression" in script.text
         assert "试听记录" in page.text
+        assert "异常情况提交" in page.text
+        assert 'id="call-token"' in page.text
+        assert "ZHIYU_CALL_TOKEN" not in page.text
+        assert "ZHIYU_SUBMIT_TOKEN" not in page.text
+        assert "ZHIYU_ADMIN_TOKEN" not in page.text
         voices = client.get("/api/voices")
         assert voices.status_code == 200
         assert voices.json()["voices"][0]["engine"] == "cosyvoice"

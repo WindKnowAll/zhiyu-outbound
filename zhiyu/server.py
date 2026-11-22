@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import json
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -46,6 +47,7 @@ from zhiyu.teammate.review import (
     ReviewStore,
     collect_config,
     eval_prompts,
+    export_view,
     preview_review,
 )
 from zhiyu.transport.bot import run_bot
@@ -285,6 +287,13 @@ def create_app(
         if _bearer(request) != admin_token:
             raise HTTPException(status_code=401, detail="需要管理员令牌。")
 
+    def _pasted_secret(payload: object) -> bool:
+        try:
+            blob = json.dumps(payload, ensure_ascii=False)
+        except TypeError:
+            return False
+        return any(token and token in blob for token in (admin_token, submit_token, call_token))
+
     def _submit(request: Request) -> None:
         if not collect_on:
             raise HTTPException(status_code=404, detail="集中收集没有启用。")
@@ -339,6 +348,8 @@ def create_app(
         if closed is not None:
             return closed
         payload = await request.json()
+        if _pasted_secret(payload):
+            return JSONResponse(status_code=400, content={"message": "记录里不能带密钥或口令。"})
         who = str(payload.get("pseudonym") or "")
         if not local_gate.allow(who or request.client.host if request.client else "local"):
             return JSONResponse(status_code=429, content={"message": "保存太频繁，请稍后再试。"})
@@ -366,7 +377,7 @@ def create_app(
             return JSONResponse(status_code=400, content={"message": str(exc)})
         if found is None:
             raise HTTPException(status_code=404, detail="没有这条记录。")
-        return JSONResponse(found)
+        return JSONResponse(export_view(found))
 
     @app.get("/api/reviews/{review_id}/export")
     async def review_export(review_id: str) -> JSONResponse:
@@ -380,7 +391,7 @@ def create_app(
         if found is None:
             raise HTTPException(status_code=404, detail="没有这条记录。")
         return JSONResponse(
-            found,
+            export_view(found),
             headers={"Content-Disposition": f'attachment; filename="{review_id}.json"'},
         )
 
@@ -404,8 +415,11 @@ def create_app(
             return closed
         if not local_gate.allow("import"):
             return JSONResponse(status_code=429, content={"message": "导入太频繁，请稍后再试。"})
+        payload = await request.json()
+        if _pasted_secret(payload):
+            return JSONResponse(status_code=400, content={"message": "记录里不能带密钥或口令。"})
         try:
-            saved = reviews.import_record(await request.json())
+            saved = reviews.import_record(payload)
         except ReviewRejected as exc:
             return JSONResponse(status_code=400, content={"message": str(exc)})
         return JSONResponse(saved)
@@ -416,6 +430,8 @@ def create_app(
             raise HTTPException(status_code=404, detail="集中收集没有启用。请改用本机导出。")
         _submit(request)
         payload = await request.json()
+        if _pasted_secret(payload):
+            return JSONResponse(status_code=400, content={"message": "记录里不能带密钥或口令。"})
         who = str(payload.get("pseudonym") or "")
         if not collect_gate.allow(who or "collect"):
             return JSONResponse(status_code=429, content={"message": "提交太频繁，请稍后再试。"})
@@ -423,7 +439,32 @@ def create_app(
             saved = reviews.save(payload)
         except ReviewRejected as exc:
             return JSONResponse(status_code=400, content={"message": str(exc)})
-        return JSONResponse({"id": saved["id"], "pseudonym": saved["pseudonym"]})
+        return JSONResponse(
+            {
+                "id": saved["id"],
+                "pseudonym": saved["pseudonym"],
+                "duplicate": bool(saved.get("duplicate")),
+                "call_link": saved.get("call_link") or "unspecified",
+            }
+        )
+
+    @app.get("/api/collect/export")
+    async def collect_export(request: Request, only: str = "") -> JSONResponse:
+        if not collect_on:
+            raise HTTPException(status_code=404, detail="集中收集没有启用。")
+        _admin(request)
+        if only not in {"", "incident"}:
+            return JSONResponse(status_code=400, content={"message": "只能导出全部或异常。"})
+        return JSONResponse(
+            {
+                "schema": "zhiyu.incident_export.v1",
+                "raw_audio": False,
+                "rsi": "human_review_only",
+                "autosend": False,
+                "reviews": reviews.export_records(incidents_only=only == "incident"),
+            },
+            headers={"Content-Disposition": 'attachment; filename="zhiyu-incidents.json"'},
+        )
 
     @app.get("/api/collect/{review_id}")
     async def collect_one(review_id: str, request: Request) -> JSONResponse:
@@ -436,7 +477,7 @@ def create_app(
             return JSONResponse(status_code=400, content={"message": str(exc)})
         if found is None:
             raise HTTPException(status_code=404, detail="没有这条记录。")
-        return JSONResponse(found)
+        return JSONResponse(export_view(found))
 
     @app.get("/api/collect")
     async def collect_list(request: Request, pseudonym: str = "") -> JSONResponse:

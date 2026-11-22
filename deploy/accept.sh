@@ -78,5 +78,42 @@ with urllib.request.urlopen(req) as resp:
     listed = json.loads(resp.read().decode())
 names = [item.get("pseudonym") for item in listed.get("reviews", [])]
 assert names == ["验收"] or "验收" in names
+incident = json.dumps({
+    "schema": "zhiyu.teammate_review.v1",
+    "synthetic": True,
+    "raw_audio": False,
+    "consent": True,
+    "pseudonym": "验收",
+    "page_version": "v1.8",
+    "scenario": {"row": 36, "menu": "品牌", "category": "商标", "reason": "图形", "close_method": "电话", "script_complete": True},
+    "session_id": "",
+    "call_link": "no_call",
+    "idempotency_key": "11111111-1111-4111-8111-111111111111",
+    "turns": [],
+    "provider_traces": [],
+    "stage_timings": [],
+    "feedback": {"expected": "", "actual": "", "incident": "验收异常", "suggestion": "先核对再改"},
+}).encode()
+def post_incident():
+    req = urllib.request.Request(base + "/api/collect", data=incident, method="POST")
+    req.add_header("Authorization", "Bearer " + submit)
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read().decode())
+once = post_incident()
+twice = post_incident()
+assert once["id"] == twice["id"]
+assert twice.get("duplicate") is True
+assert twice.get("call_link") == "no_call"
+export_req = urllib.request.Request(base + "/api/collect/export?" + urllib.parse.urlencode({"only": "incident"}))
+export_req.add_header("Authorization", "Bearer " + admin)
+with urllib.request.urlopen(export_req) as resp:
+    exported = json.loads(resp.read().decode())
+assert exported.get("raw_audio") is False
+assert exported.get("rsi") == "human_review_only"
+found = [item for item in exported.get("reviews", []) if item.get("id") == once["id"]]
+assert found and found[0]["feedback"]["incident"] == "验收异常"
+blob = json.dumps(exported, ensure_ascii=False)
+assert submit not in blob and admin not in blob
 print("accept-ok page_version=v1.8 collect-isolated")
 PY

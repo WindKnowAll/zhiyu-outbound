@@ -30,6 +30,17 @@
     };
   }
 
+  function incidentBinding(liveId, storedId) {
+    if (liveId) return { sessionId: String(liveId), callLink: "current" };
+    if (storedId) return { sessionId: String(storedId), callLink: "recent" };
+    return { sessionId: "", callLink: "no_call" };
+  }
+
+  function incidentKey(existing, renew, mint) {
+    if (existing && !renew) return existing;
+    return mint();
+  }
+
   function buildReview(input) {
     const turns = (input.turns || []).map((turn) => ({
       role: turn.role,
@@ -45,12 +56,16 @@
       page_version: input.pageVersion || "",
       scenario: input.scenario || { row: 0 },
       session_id: input.sessionId || "",
+      call_link: input.callLink || "unspecified",
+      idempotency_key: input.idempotencyKey || "",
       turns: turns,
       provider_traces: input.providerTraces || [],
       stage_timings: input.stageTimings || [],
       feedback: {
         expected: input.expected || "",
         actual: input.actual || "",
+        incident: input.incident || "",
+        suggestion: input.suggestion || "",
       },
       audio_constraints: audioConstraints(input.echoCancellation, input.noiseSuppression),
       vad: input.vad || {},
@@ -62,5 +77,7 @@
     audioConstraints: audioConstraints,
     voiceChoices: voiceChoices,
     buildReview: buildReview,
+    incidentBinding: incidentBinding,
+    incidentKey: incidentKey,
   };
 })(typeof globalThis === "undefined" ? window : globalThis);
