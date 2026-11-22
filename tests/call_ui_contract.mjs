@@ -48,5 +48,11 @@ const yes = lines.filter((line) => line.role === "user" && line.text === "是的
 if (yes.length !== 2) throw new Error("repeated turn was deleted");
 if (ui.playbackAction("barge_in") !== "flush") throw new Error("barge-in does not flush");
 if (ui.playbackAction("status") !== "keep") throw new Error("other events flush");
+const failed = ui.mediaLinkText("failed", "failed");
+if (!failed.startsWith("媒体连接失败") || !failed.includes("ICE failed") || !failed.includes("不是识别")) {
+  throw new Error("failed text");
+}
+const dropped = ui.mediaLinkText("disconnected", "disconnected");
+if (!dropped.startsWith("媒体连接断开") || dropped === failed) throw new Error("disconnected text");
 
 console.log("call ui contract ok");

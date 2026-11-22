@@ -63,6 +63,18 @@ PAGE_FILES = (
 )
 
 
+def candidate_kind_counts(lines: list[str]) -> dict[str, int]:
+    """只数候选类型。不返回地址、端口或整段 SDP。"""
+
+    counts = {"host": 0, "srflx": 0, "prflx": 0, "relay": 0}
+    for line in lines:
+        for kind in counts:
+            if f"typ {kind}" in line:
+                counts[kind] += 1
+                break
+    return counts
+
+
 def page_build() -> dict:
     """这个进程实际会读的页面文件。用来核对是不是旧目录里的另一份页面。"""
 
@@ -256,6 +268,16 @@ def create_app(
             )
 
         answer = await webrtc.handle_web_request(rtc_request, start_bot)
+        sdp = answer.get("sdp") if isinstance(answer, dict) else ""
+        if isinstance(sdp, str) and sdp:
+            counts = candidate_kind_counts(sdp.splitlines())
+            logger.info(
+                "应答候选 host={} srflx={} prflx={} relay={}",
+                counts["host"],
+                counts["srflx"],
+                counts["prflx"],
+                counts["relay"],
+            )
         return answer
 
     @app.patch("/api/offer")
@@ -263,13 +285,24 @@ def create_app(
         if call_token and request.headers.get("x-zhiyu-call-token", "") != call_token:
             raise HTTPException(status_code=401, detail="需要通话口令。")
         payload = await request.json()
+        raw_candidates = payload.get("candidates") or []
+        counts = candidate_kind_counts(
+            [str(item.get("candidate") or "") for item in raw_candidates if isinstance(item, dict)]
+        )
+        logger.info(
+            "收到浏览器候选 host={} srflx={} prflx={} relay={}",
+            counts["host"],
+            counts["srflx"],
+            counts["prflx"],
+            counts["relay"],
+        )
         candidates = [
             IceCandidate(
                 candidate=item["candidate"],
                 sdp_mid=item.get("sdp_mid") or "",
                 sdp_mline_index=int(item.get("sdp_mline_index") or 0),
             )
-            for item in payload.get("candidates") or []
+            for item in raw_candidates
         ]
         patch = SmallWebRTCPatchRequest(pc_id=payload["pc_id"], candidates=candidates)
         await webrtc.handle_patch_request(patch)

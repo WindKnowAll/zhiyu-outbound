@@ -84,11 +84,18 @@
     return eventType === "barge_in" ? "flush" : "keep";
   }
 
+  function mediaLinkText(connectionState, iceState) {
+    const link = connectionState === "failed" ? "媒体连接失败" : "媒体连接断开";
+    const ice = iceState ? "，ICE " + iceState : "";
+    return link + ice + "。这不是识别或模型报错。通话记录仍为空时，表示声音还没进到服务。";
+  }
+
   root.ZhiyuUI = {
     pickScenario,
     renderScenarioOptions,
     controls,
     applyUserTranscript,
     playbackAction,
+    mediaLinkText,
   };
 })(typeof globalThis === "undefined" ? this : globalThis);

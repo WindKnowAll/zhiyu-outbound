@@ -358,14 +358,22 @@ async function connect() {
     audioEl.srcObject = event.streams[0];
     audioEl.play().catch(() => {});
   };
+  const showMediaLink = () => {
+    const text = ZhiyuUI.mediaLinkText(pc.connectionState, pc.iceConnectionState);
+    statusEl.textContent = text;
+    setBanner(text, false);
+  };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "connected") {
       statusEl.textContent = "已接通，先确认公司和店铺";
       setOrb("speaking");
+      if (bannerEl.textContent.indexOf("媒体连接") === 0) setBanner("", false);
+      return;
     }
-    if (pc.connectionState === "failed" || pc.connectionState === "disconnected") {
-      statusEl.textContent = "连接中断";
-    }
+    if (pc.connectionState === "failed" || pc.connectionState === "disconnected") showMediaLink();
+  };
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === "failed" && pc.connectionState !== "closed") showMediaLink();
   };
   pc.onicecandidate = (event) => {
     if (!event.candidate) return;

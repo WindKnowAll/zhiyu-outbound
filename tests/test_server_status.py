@@ -1,7 +1,19 @@
 from fastapi.testclient import TestClient
 
 from zhiyu.config import load_settings
-from zhiyu.server import create_app
+from zhiyu.server import candidate_kind_counts, create_app
+
+
+def test_candidate_counts_keep_addresses_out():
+    counts = candidate_kind_counts(
+        [
+            "a=candidate:1 1 UDP 1 172.31.77.255 40000 typ host",
+            "a=candidate:2 1 UDP 2 203.0.113.8 41000 typ srflx raddr 172.31.77.255",
+            "a=candidate:3 1 UDP 3 198.51.100.9 3478 typ relay",
+        ]
+    )
+    assert counts == {"host": 1, "srflx": 1, "prflx": 0, "relay": 1}
+    assert "172.31.77.255" not in str(counts)
 
 
 def test_homepage_and_status_open_without_a_key(monkeypatch):
