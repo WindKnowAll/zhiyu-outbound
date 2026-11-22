@@ -17,18 +17,27 @@ def test_homepage_and_status_open_without_a_key(monkeypatch):
         assert "京东 POP 商家资质审核比赛模拟客服" in page.text
         assert "不是京东官方服务" in page.text
         assert page.text.count("<option ") >= 68
-        assert "zhiyu-20261121g" in page.text
+        assert "zhiyu-20261122h" in page.text
         assert "serviceWorker.register" not in page.text
         for old in ("图书馆", "星河", "取书", "小语"):
             assert old not in page.text
         build = client.get("/api/build")
         assert build.status_code == 200
-        assert build.json()["page_version"] == "zhiyu-20261121g"
+        assert build.json()["page_version"] == "zhiyu-20261122h"
         assert build.json()["service_worker"] is False
         assert build.json()["scenario_count"] == 68
         script = client.get("/static/app.js")
         assert script.headers["cache-control"] == "no-store"
         assert "echoCancellation" in script.text
+        assert "noiseSuppression" in script.text
+        assert "试听记录" in page.text
+        voices = client.get("/api/voices")
+        assert voices.status_code == 200
+        assert voices.json()["voices"][0]["engine"] == "cosyvoice"
+        assert "Microsoft" in voices.json()["unsupported"]
+        collection = client.get("/api/collection")
+        assert collection.json()["enabled"] is False
+        assert client.post("/api/collect", json={}).status_code == 404
 
         status = client.get("/api/status")
         assert status.status_code == 200

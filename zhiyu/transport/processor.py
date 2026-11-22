@@ -69,6 +69,7 @@ class VoiceSessionProcessor(FrameProcessor):
         language_model,
         tts_factory,
         scenario_row: int | None = None,
+        vad_override: dict | None = None,
     ) -> None:
         super().__init__(name="zhiyu-voice")
         self._settings = settings
@@ -81,13 +82,14 @@ class VoiceSessionProcessor(FrameProcessor):
         self._opening = self._hooks.opening()
         self._session = session
         self._recognizer = recognizer
+        chosen = vad_override or {}
         self._vad = SileroVADAnalyzer(
             sample_rate=16000,
             params=VADParams(
-                confidence=settings.vad_confidence,
-                start_secs=settings.vad_start_secs,
+                confidence=float(chosen.get("confidence", settings.vad_confidence)),
+                start_secs=float(chosen.get("start_secs", settings.vad_start_secs)),
                 stop_secs=settings.vad_stop_secs,
-                min_volume=settings.vad_min_volume,
+                min_volume=float(chosen.get("min_volume", settings.vad_min_volume)),
             ),
         )
         self._vad.set_sample_rate(16000)

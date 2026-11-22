@@ -563,6 +563,35 @@ async def test_free_text_before_intent_is_not_spoken(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_stop_and_ask_why_says_the_known_reason(tmp_path):
+    hooks = QualificationHooks(store=TicketStore(tmp_path))
+    engine, made = _engine(IntentLLM("question", reply="材料不全，具体不符也是材料不全。"), hooks)
+    await _say(engine, "是的，我是这家公司")
+    await _say(engine, "嗯，停停停，等一下，为什么被驳回了")
+    reply = "".join(made[-1].texts)
+    assert "先停一下" in reply
+    assert "图形商标" in reply
+    assert "材料不全，具体不符也是材料不全" not in reply
+    assert "转接真人" not in reply
+    assert "京东资质审核专员" not in reply
+
+
+@pytest.mark.asyncio
+async def test_feedback_channel_is_not_an_invented_hotline(tmp_path):
+    hooks = QualificationHooks(store=TicketStore(tmp_path))
+    engine, made = _engine(IntentLLM("question", reply="请打热线转人工"), hooks)
+    await _say(engine, "是的")
+    await _say(engine, "在哪里得到反馈，能转人工吗")
+    reply = "".join(made[-1].texts)
+    assert "电话说明" in reply
+    assert "不能直接转给别人" in reply
+    assert "转接真人" not in reply
+    assert "400" not in reply
+    assert "京东资质审核专员" not in reply
+    assert hooks.call.transfer is False
+
+
+@pytest.mark.asyncio
 async def test_unclear_hmm_does_not_force_confirmation(tmp_path):
     llm = IntentLLM("unclear", reply="你说的我没听清。")
     hooks = QualificationHooks(store=TicketStore(tmp_path))

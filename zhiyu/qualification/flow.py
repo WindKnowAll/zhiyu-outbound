@@ -87,8 +87,53 @@ def asks_to_break_rules(text: str) -> bool:
 def asks_rejection_reason(text: str) -> bool:
     return any(
         word in text
-        for word in ("为什么驳回", "为何驳回", "为什么不支持", "为什么拒", "驳回原因", "不支持申请")
+        for word in (
+            "为什么驳回",
+            "为何驳回",
+            "为什么被驳回",
+            "为何被驳回",
+            "怎么被驳回",
+            "为什么不支持",
+            "为什么拒",
+            "驳回原因",
+            "不支持申请",
+        )
     )
+
+
+def asks_handoff(text: str) -> bool:
+    return any(word in text for word in ("转人工", "转接", "在哪里得到反馈", "哪里反馈", "怎么反馈"))
+
+
+def handoff_decision(call: QualificationCall) -> Decision:
+    """只复述这条原表的关单方式。不新编号码，也不假装已经转接。"""
+
+    if not call.identity_confirmed:
+        return Decision(
+            speak="身份还没确认。我不能说明具体渠道，也不能把这通电话直接转给别人。请问您是这家公司或这个店铺吗？",
+        )
+    if call.scenario.close_method == "京麦驳回":
+        channel = "这条是京麦驳回，结果在京麦里看。"
+    else:
+        channel = "这条按电话说明处理。"
+    return Decision(speak=f"好，我先回答这个问题。{channel}我不另报号码，这通电话也不能直接转给别人。")
+
+
+def conversational_override(call: QualificationCall, user_text: str) -> Decision | None:
+    """先接住打断、追问和要人工。原因只用原表，不另编。"""
+
+    if asks_to_break_rules(user_text):
+        return None
+    why = bool(call.identity_confirmed and asks_rejection_reason(user_text))
+    hand = asks_handoff(user_text)
+    if not why and not hand:
+        return None
+    if why:
+        decision = call._answer(user_text)
+        if hand:
+            decision.speak = decision.speak + handoff_decision(call).speak
+        return decision
+    return handoff_decision(call)
 
 
 @dataclass
@@ -299,11 +344,12 @@ class QualificationCall:
     def _answer(self, user_text: str) -> Decision:
         if self.identity_confirmed and asks_rejection_reason(user_text):
             text, complete = filled_script(self.scenario, self.case.brand)
+            ack = "好，先停一下。" if any(word in user_text for word in ("停停", "等一下", "等一等")) else ""
             if complete:
                 lead = ""
                 if self.scenario.close_method == "京麦驳回":
                     lead = "这条申请的关单方式是京麦驳回，电话里不另加承诺。"
-                return Decision(speak=lead + text)
+                return Decision(speak=ack + lead + text)
             return Decision(
                 speak=SAFE_FALLBACK,
                 transfer=True,
@@ -732,7 +778,12 @@ def resolve_turn(call: QualificationCall, user_text: str, model_raw: str) -> tup
         "ack": "ack",
         "unclear": "other",
     }[intent]
-    if call.stage == "closed":
+    override = conversational_override(call, user_text)
+    if override is not None:
+        decision = override
+        if asks_handoff(user_text):
+            fallback_reason = "approved_channel" if not fallback_reason else f"{fallback_reason},approved_channel"
+    elif call.stage == "closed":
         decision = Decision(speak="这通电话已经结束。我不能另外补充审核政策。")
     elif not call.identity_confirmed:
         if kind == "confirm":

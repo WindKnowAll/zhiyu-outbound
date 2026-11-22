@@ -38,6 +38,7 @@ let botLine = null;
 let userLines = [];
 let ticketSeen = false;
 let scenarios = [];
+let callLog = { turns: [], traces: [], timings: [] };
 
 function setBanner(text, ok) {
   if (!text) {
@@ -160,6 +161,8 @@ function handleEvent(event) {
         botLine.textContent += "（被打断）";
       }
       botLine = null;
+      callLog.turns.push({ role: "assistant", text: event.text || "", false_barge_in: false });
+      refreshBargeMarks();
       return;
     }
     if (!botLine) {
@@ -169,7 +172,20 @@ function handleEvent(event) {
     }
     return;
   }
+  if (event.type === "turn_trace") {
+    callLog.traces.push({
+      turn_id: event.turn_id,
+      provider_called: Boolean(event.provider_called),
+      provider_status: event.provider_status,
+      intent: event.intent || "",
+      fallback_reason: event.fallback_reason || "",
+      script_missing: Boolean(event.script_missing),
+      llm_first_token_ms: event.llm_first_token_ms,
+    });
+    return;
+  }
   if (event.type === "latency") {
+    if (event.timings) callLog.timings.push(event.timings);
     showLatency(event.timings);
     if (event.interrupted) {
       statusEl.textContent = "你插话了，上一句已停";
@@ -300,18 +316,24 @@ async function connect() {
   starting = true;
   ticketSeen = false;
   userLines = [];
+  callLog = { turns: [], traces: [], timings: [] };
   refreshControls();
   statusEl.textContent = "正在接通";
   buttonEl.disabled = true;
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      channelCount: 1,
-    },
-    video: false,
-  });
+  if (!window.isSecureContext) {
+    throw new Error(ZhiyuReview.mediaErrorText(null, false));
+  }
+  let stream;
+  try {
+    const audio = ZhiyuReview.audioConstraints(
+      document.getElementById("echo").checked,
+      document.getElementById("noise").checked,
+    );
+    audio.autoGainControl = true;
+    stream = await navigator.mediaDevices.getUserMedia({ audio: audio, video: false });
+  } catch (error) {
+    throw new Error(ZhiyuReview.mediaErrorText(error, true));
+  }
 
   const pc = new RTCPeerConnection({ iceServers });
   peer = pc;
@@ -351,6 +373,11 @@ async function connect() {
       sdp: pc.localDescription.sdp,
       type: pc.localDescription.type,
       scenario_id: scenarioEl.value,
+      vad: {
+        confidence: Number(document.getElementById("vad-confidence").value),
+        start_secs: Number(document.getElementById("vad-start").value),
+        min_volume: Number(document.getElementById("vad-volume").value),
+      },
     }),
   });
   const answer = await response.json();
@@ -452,8 +479,187 @@ randomEl.addEventListener("click", async () => {
   }
 });
 
+function selectedScenario() {
+  return scenarios.find((item) => String(item.row) === scenarioEl.value) || null;
+}
+
+function refreshBargeMarks() {
+  const box = document.getElementById("barge-marks");
+  if (!box) return;
+  const users = userLines.filter((line) => line.role === "user");
+  box.replaceChildren();
+  if (!users.length) {
+    const note = document.createElement("p");
+    note.className = "scenario-note";
+    note.textContent = "接通后出现的商家句子，才能标成误打断。没有通话时这里是空的。";
+    box.append(note);
+    return;
+  }
+  users.forEach((line, index) => {
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = Boolean(line.falseBarge);
+    input.addEventListener("change", () => {
+      line.falseBarge = input.checked;
+    });
+    label.append(input, document.createTextNode(" 误打断：" + (line.text || "（空）")));
+    box.append(label);
+    line.falseBarge = Boolean(line.falseBarge);
+    void index;
+  });
+}
+
+function turnsForReview() {
+  const users = userLines.filter((line) => line.role === "user");
+  const assistants = callLog.turns.filter((turn) => turn.role === "assistant");
+  const turns = [];
+  const count = Math.max(users.length, assistants.length);
+  for (let index = 0; index < count; index += 1) {
+    if (users[index]) {
+      turns.push({
+        role: "user",
+        text: users[index].text || "",
+        false_barge_in: Boolean(users[index].falseBarge),
+      });
+    }
+    if (assistants[index]) turns.push(assistants[index]);
+  }
+  return turns;
+}
+
+function reviewPayload() {
+  const selected = selectedScenario();
+  return ZhiyuReview.buildReview({
+    consent: document.getElementById("consent").checked,
+    pseudonym: document.getElementById("pseudonym").value,
+    pageVersion: document.querySelector('meta[name="zhiyu-page"]').content,
+    scenario: selected
+      ? {
+          row: selected.row,
+          menu: selected.menu,
+          category: selected.category,
+          reason: selected.reason,
+          close_method: selected.close_method,
+          script_complete: selected.script_complete,
+        }
+      : { row: Number(scenarioEl.value) },
+    sessionId: pcId || "",
+    turns: turnsForReview(),
+    providerTraces: callLog.traces,
+    stageTimings: callLog.timings,
+    expected: document.getElementById("expected").value,
+    actual: document.getElementById("actual").value,
+    echoCancellation: document.getElementById("echo").checked,
+    noiseSuppression: document.getElementById("noise").checked,
+    vad: {
+      confidence: Number(document.getElementById("vad-confidence").value),
+      start_secs: Number(document.getElementById("vad-start").value),
+      min_volume: Number(document.getElementById("vad-volume").value),
+    },
+  });
+}
+
+async function refreshHistory() {
+  const list = document.getElementById("history");
+  const response = await fetch("/api/reviews");
+  const body = await response.json();
+  list.replaceChildren();
+  const rows = body.reviews || [];
+  if (!rows.length) {
+    const item = document.createElement("li");
+    item.textContent = "还没有保存过的记录。这里不会编造耗时。";
+    list.append(item);
+    return;
+  }
+  for (const row of rows) {
+    const item = document.createElement("li");
+    const link = document.createElement("button");
+    link.type = "button";
+    link.textContent = (row.pseudonym || "未命名") + " · 场景 " + (row.scenario_row || "—") + " · " + (row.turn_count || 0) + " 轮";
+    link.addEventListener("click", async () => {
+      const detail = await fetch("/api/reviews/" + row.id);
+      document.getElementById("review-preview").textContent = await detail.text();
+    });
+    const download = document.createElement("a");
+    download.href = "/api/reviews/" + row.id + "/export";
+    download.textContent = "下载";
+    item.append(link, document.createTextNode(" "), download);
+    list.append(item);
+  }
+}
+
+document.getElementById("preview-review").addEventListener("click", async () => {
+  const response = await fetch("/api/reviews/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(reviewPayload()),
+  });
+  document.getElementById("review-preview").textContent = await response.text();
+});
+
+document.getElementById("save-review").addEventListener("click", async () => {
+  const response = await fetch("/api/reviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(reviewPayload()),
+  });
+  document.getElementById("review-preview").textContent = await response.text();
+  if (response.ok) await refreshHistory();
+});
+
+document.getElementById("import-review").addEventListener("click", () => {
+  document.getElementById("import-file").click();
+});
+
+document.getElementById("import-file").addEventListener("change", async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const payload = JSON.parse(await file.text());
+  const response = await fetch("/api/reviews/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  document.getElementById("review-preview").textContent = await response.text();
+  if (response.ok) await refreshHistory();
+});
+
+fetch("/api/voices")
+  .then((response) => response.json())
+  .then((body) => {
+    const note = ZhiyuReview.voiceChoices((body.voices && body.voices[0] && body.voices[0].id) || "");
+    document.getElementById("voice-note").textContent =
+      (note.voices[0] ? "当前 CosyVoice 音色：" + note.voices[0].id + "。" : "") + note.unsupported;
+  })
+  .catch(() => {});
+
+fetch("/api/eval-prompts")
+  .then((response) => response.json())
+  .then((body) => {
+    const list = document.getElementById("eval-prompts");
+    for (const item of body.prompts || []) {
+      const node = document.createElement("li");
+      node.textContent = item.utterance + " — " + item.expect + "（尚未用真实语音验收）";
+      list.append(node);
+    }
+  })
+  .catch(() => {});
+
+fetch("/api/collection")
+  .then((response) => response.json())
+  .then((body) => {
+    if (!body.enabled) {
+      document.getElementById("hosting-note").textContent += " 集中收集接口当前关闭。";
+    }
+  })
+  .catch(() => {});
+
+refreshHistory().catch(() => {});
+refreshBargeMarks();
+
 if (typeof ZhiyuUI === "undefined") {
-  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261121g，否则不是这次的服务。");
+  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261122h，否则不是这次的服务。");
 }
 
 loadStatus()

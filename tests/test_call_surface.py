@@ -63,7 +63,9 @@ def test_browser_contract_covers_pool_timing_and_lock():
     node = _node_binary()
     if node is None:
         pytest.skip("本机没有 node。同一页面契约在有 node 的环境里执行 tests/call_ui_contract.mjs。")
-    subprocess.check_call([node, "tests/call_ui_contract.mjs"], cwd=Path(__file__).resolve().parents[1])
+    root = Path(__file__).resolve().parents[1]
+    subprocess.check_call([node, "tests/call_ui_contract.mjs"], cwd=root)
+    subprocess.check_call([node, "tests/review_ui_contract.mjs"], cwd=root)
 
 
 @pytest.mark.asyncio

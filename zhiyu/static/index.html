@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>智语外呼</title>
-    <meta name="zhiyu-page" content="zhiyu-20261121g" />
-    <link rel="stylesheet" href="/static/style.css?v=zhiyu-20261121g" />
+    <meta name="zhiyu-page" content="zhiyu-20261122h" />
+    <link rel="stylesheet" href="/static/style.css?v=zhiyu-20261122h" />
   </head>
   <body>
     <main class="phone">
@@ -17,6 +17,8 @@
 
       <p id="banner" class="banner" hidden></p>
 
+      <div class="desk">
+      <div class="col-controls">
       <section class="scenarios" aria-label="选择测试场景">
         <h2>选择测试场景</h2>
         <label class="scenario-label" for="scenario">资审主表全部驳回类型，通话前就能选</label>
@@ -32,6 +34,19 @@
         <p class="scenario-note">随机开始会从全部驳回场景里抽一个，并立刻申请麦克风、接通这通电话。</p>
       </section>
 
+      <section class="audio-setup" aria-label="麦克风与开口检测">
+        <h2>麦克风与开口检测</h2>
+        <p class="scenario-note" id="secure-note">浏览器回声消除和降噪只作用在本机采集。服务端 Silero 另有三项，改它们才会改变打断。浏览器语音不会送进 CosyVoice。</p>
+        <label><input id="echo" type="checkbox" checked /> 回声消除 echoCancellation</label>
+        <label><input id="noise" type="checkbox" checked /> 降噪 noiseSuppression</label>
+        <label>开口灵敏度 confidence <input id="vad-confidence" type="range" min="0.5" max="0.95" step="0.05" value="0.7" /></label>
+        <label>开口需持续 start_secs <input id="vad-start" type="range" min="0.1" max="0.6" step="0.05" value="0.2" /></label>
+        <label>最低音量 min_volume <input id="vad-volume" type="range" min="0.2" max="0.95" step="0.05" value="0.6" /></label>
+        <p id="voice-note" class="scenario-note">音色以服务端已配置的 CosyVoice 为准。</p>
+      </section>
+      </div>
+
+      <div class="col-live">
       <section class="call" aria-live="polite">
         <div id="orb" class="orb quiet"></div>
         <p id="status" class="status">正在检查配置</p>
@@ -57,9 +72,35 @@
         <h2>本通模拟工单</h2>
         <p id="ticket">还没有写回。这是本项目的本地记录，不是京东官方接口。</p>
       </section>
+      </div>
+
+      <div class="col-record">
+      <section class="review" id="review" aria-label="试听记录">
+        <h2>试听记录</h2>
+        <p class="scenario-note">合成商家的比赛模拟。录音默认不采集。保存和下载都停在这台电脑，不会自动发给任何人，也不会拿去自动训练。</p>
+        <label>测试代号 <input id="pseudonym" maxlength="16" autocomplete="off" placeholder="例如：甲" /></label>
+        <label><input id="consent" type="checkbox" /> 我同意把这次的文字记录保存在这台电脑，供人工抽查</label>
+        <label>期望 <textarea id="expected" rows="2"></textarea></label>
+        <label>实际 <textarea id="actual" rows="2"></textarea></label>
+        <div id="barge-marks"></div>
+        <div class="actions">
+          <button id="preview-review" type="button">预览将保存的内容</button>
+          <button id="save-review" type="button">保存到这台电脑</button>
+          <button id="import-review" type="button">导入记录</button>
+          <input id="import-file" type="file" accept="application/json" hidden />
+        </div>
+        <pre id="review-preview">还没有预览。</pre>
+        <h3>本机已保存</h3>
+        <ul id="history"></ul>
+        <h3>以后人工抽查的例句</h3>
+        <ul id="eval-prompts"></ul>
+        <p class="scenario-note" id="hosting-note">预定给队友用的是一台长期开着的 HTTPS 服务器，不是把这台电脑打成公网隧道。手机上的 127.0.0.1 指向手机自己。这次还没购买或开通，集中收集默认关闭，不能当成已经可以公开使用。</p>
+      </section>
+      </div>
+      </div>
 
       <footer>
-        <p id="build">页面版本 zhiyu-20261121g。智语外呼，京东 POP 商家资质审核比赛模拟客服。不是京东官方服务。不索要验证码、密码、银行卡或身份证，也不保证审核通过。</p>
+        <p id="build">页面版本 zhiyu-20261122h。智语外呼，京东 POP 商家资质审核比赛模拟客服。不是京东官方服务。不索要验证码、密码、银行卡或身份证，也不保证审核通过。</p>
       </footer>
     </main>
     <script>
@@ -73,7 +114,8 @@
         });
       }
     </script>
-    <script src="/static/call_ui.js?v=zhiyu-20261121g" onerror="zhiyuPageFailed('页面脚本没有加载。页脚必须是 zhiyu-20261121g，否则不是这次的服务。')"></script>
-    <script src="/static/app.js?v=zhiyu-20261121g" onerror="zhiyuPageFailed('页面脚本没有加载。页脚必须是 zhiyu-20261121g，否则不是这次的服务。')"></script>
+    <script src="/static/call_ui.js?v=zhiyu-20261122h" onerror="zhiyuPageFailed('页面脚本没有加载。页脚必须是 zhiyu-20261122h，否则不是这次的服务。')"></script>
+    <script src="/static/review_ui.js?v=zhiyu-20261122h" onerror="zhiyuPageFailed('记录脚本没有加载。')"></script>
+    <script src="/static/app.js?v=zhiyu-20261122h" onerror="zhiyuPageFailed('页面脚本没有加载。页脚必须是 zhiyu-20261122h，否则不是这次的服务。')"></script>
   </body>
 </html>

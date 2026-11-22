@@ -39,6 +39,14 @@ from zhiyu.config import (
 from zhiyu.qualification.catalog import load_catalog
 from zhiyu.qualification.flow import ScenarioRejected, resolve_scenario_id, scenario_choices
 from zhiyu.session import SessionHub
+from zhiyu.teammate.review import (
+    RateGate,
+    ReviewRejected,
+    ReviewStore,
+    collect_config,
+    eval_prompts,
+    preview_review,
+)
 from zhiyu.transport.bot import run_bot
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -47,6 +55,7 @@ PAGE_FILES = (
     "zhiyu/static/index.html",
     "zhiyu/static/app.js",
     "zhiyu/static/call_ui.js",
+    "zhiyu/static/review_ui.js",
     "zhiyu/static/style.css",
 )
 
@@ -94,10 +103,50 @@ def render_index() -> str:
     return text.replace("<!--SCENARIOS-->", scenario_options_html())
 
 
-def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -> FastAPI:
+def parse_call_vad(raw: object, settings: Settings) -> dict | None:
+    """只接受已经接在 Silero 上的三项。不接受把定稿等待调大。"""
+
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("开口检测参数不正确。")
+
+    def pick(name: str, default: float, low: float, high: float) -> float:
+        if name not in raw or raw[name] is None:
+            return default
+        try:
+            value = float(raw[name])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("开口检测参数不正确。") from exc
+        if not low <= value <= high:
+            raise ValueError(f"{name} 超出这次允许的范围。")
+        return value
+
+    return {
+        "confidence": pick("confidence", settings.vad_confidence, 0.5, 0.95),
+        "start_secs": pick("start_secs", settings.vad_start_secs, 0.1, 0.6),
+        "min_volume": pick("min_volume", settings.vad_min_volume, 0.2, 0.95),
+    }
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    preload_vad: bool = False,
+    review_dir: Path | None = None,
+    collect_enabled: bool | None = None,
+    collect_token: str | None = None,
+    collect_submit_token: str | None = None,
+) -> FastAPI:
     settings = settings or load_settings()
     persona = load_persona()
     hub = SessionHub()
+    reviews = ReviewStore(review_dir or (ROOT / "var" / "teammate_reviews"))
+    collect_on, admin_token, submit_token = collect_config(
+        collect_enabled, collect_token, collect_submit_token
+    )
+    local_gate = RateGate(30, 600)
+    collect_gate = RateGate(10, 60)
     ice_servers = [IceServer(urls=url) for url in settings.ice_servers] or None
     webrtc = SmallWebRTCRequestHandler(ice_servers=ice_servers)
 
@@ -169,9 +218,11 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
     async def offer(request: Request, background_tasks: BackgroundTasks):
         payload = await request.json()
         scenario_raw = payload.pop("scenario_id", None)
+        vad_raw = payload.pop("vad", None)
         try:
             scenario_row = resolve_scenario_id(scenario_raw, load_catalog())
-        except ScenarioRejected as exc:
+            vad_override = parse_call_vad(vad_raw, settings)
+        except (ScenarioRejected, ValueError) as exc:
             return JSONResponse(status_code=400, content={"message": str(exc)})
         if not settings.credentials_ready:
             return JSONResponse(status_code=503, content=status_payload(settings))
@@ -179,7 +230,13 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
 
         async def start_bot(connection) -> None:
             background_tasks.add_task(
-                run_bot, connection, settings, persona, hub, scenario_row
+                run_bot,
+                connection,
+                settings,
+                persona,
+                hub,
+                scenario_row,
+                vad_override,
             )
 
         answer = await webrtc.handle_web_request(rtc_request, start_bot)
@@ -199,6 +256,138 @@ def create_app(settings: Settings | None = None, *, preload_vad: bool = False) -
         patch = SmallWebRTCPatchRequest(pc_id=payload["pc_id"], candidates=candidates)
         await webrtc.handle_patch_request(patch)
         return {"status": "success"}
+
+    def _bearer(request: Request) -> str:
+        header = request.headers.get("authorization", "")
+        if header.startswith("Bearer "):
+            return header.removeprefix("Bearer ").strip()
+        return ""
+
+    def _admin(request: Request) -> None:
+        if not collect_on:
+            raise HTTPException(status_code=404, detail="集中收集没有启用。")
+        if _bearer(request) != admin_token:
+            raise HTTPException(status_code=401, detail="需要管理员令牌。")
+
+    def _submit(request: Request) -> None:
+        if not collect_on:
+            raise HTTPException(status_code=404, detail="集中收集没有启用。")
+        token = _bearer(request)
+        if token not in {admin_token, submit_token}:
+            raise HTTPException(status_code=401, detail="需要提交令牌。")
+
+    @app.get("/api/voices")
+    async def voices() -> dict:
+        return {
+            "model": settings.tts_model,
+            "voices": [{"id": settings.tts_voice, "usable": True, "engine": "cosyvoice"}],
+            "unsupported": "浏览器自带语音，包括 Microsoft 语音，不会送进 CosyVoice。",
+        }
+
+    @app.get("/api/collection")
+    async def collection() -> dict:
+        return {
+            "enabled": collect_on,
+            "mode": "central_admin" if collect_on else "local_export",
+            "public_ready": False,
+            "https_terminated_here": False,
+            "raw_audio": False,
+            "autosend": False,
+            "rsi": "human_review_only",
+        }
+
+    @app.get("/api/eval-prompts")
+    async def prompts() -> dict:
+        return {"status": "criteria_only", "prompts": eval_prompts()}
+
+    @app.post("/api/reviews/preview")
+    async def review_preview(request: Request) -> JSONResponse:
+        try:
+            body = preview_review(await request.json())
+        except ReviewRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        return JSONResponse(body)
+
+    @app.post("/api/reviews")
+    async def review_save(request: Request) -> JSONResponse:
+        payload = await request.json()
+        who = str(payload.get("pseudonym") or "")
+        if not local_gate.allow(who or request.client.host if request.client else "local"):
+            return JSONResponse(status_code=429, content={"message": "保存太频繁，请稍后再试。"})
+        try:
+            saved = reviews.save(payload)
+        except ReviewRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        return JSONResponse(saved)
+
+    @app.get("/api/reviews")
+    async def review_list(pseudonym: str = "") -> dict:
+        return {"reviews": reviews.list_reviews(pseudonym or None), "raw_audio": False}
+
+    @app.get("/api/reviews/{review_id}")
+    async def review_detail(review_id: str) -> JSONResponse:
+        try:
+            found = reviews.get(review_id)
+        except ReviewRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        if found is None:
+            raise HTTPException(status_code=404, detail="没有这条记录。")
+        return JSONResponse(found)
+
+    @app.get("/api/reviews/{review_id}/export")
+    async def review_export(review_id: str) -> JSONResponse:
+        try:
+            found = reviews.get(review_id)
+        except ReviewRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        if found is None:
+            raise HTTPException(status_code=404, detail="没有这条记录。")
+        return JSONResponse(
+            found,
+            headers={"Content-Disposition": f'attachment; filename="{review_id}.json"'},
+        )
+
+    @app.delete("/api/reviews/{review_id}")
+    async def review_delete(review_id: str) -> JSONResponse:
+        try:
+            removed = reviews.delete(review_id)
+        except ReviewRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        if not removed:
+            raise HTTPException(status_code=404, detail="没有这条记录。")
+        return JSONResponse({"deleted": True})
+
+    @app.post("/api/reviews/import")
+    async def review_import(request: Request) -> JSONResponse:
+        if not local_gate.allow("import"):
+            return JSONResponse(status_code=429, content={"message": "导入太频繁，请稍后再试。"})
+        try:
+            saved = reviews.import_record(await request.json())
+        except ReviewRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        return JSONResponse(saved)
+
+    @app.post("/api/collect")
+    async def collect_save(request: Request) -> JSONResponse:
+        if not collect_on:
+            raise HTTPException(status_code=404, detail="集中收集没有启用。请改用本机导出。")
+        _submit(request)
+        payload = await request.json()
+        who = str(payload.get("pseudonym") or "")
+        if not collect_gate.allow(who or "collect"):
+            return JSONResponse(status_code=429, content={"message": "提交太频繁，请稍后再试。"})
+        try:
+            saved = reviews.save(payload)
+        except ReviewRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        return JSONResponse({"id": saved["id"], "pseudonym": saved["pseudonym"]})
+
+    @app.get("/api/collect")
+    async def collect_list(request: Request, pseudonym: str = "") -> JSONResponse:
+        if not collect_on:
+            raise HTTPException(status_code=404, detail="集中收集没有启用。")
+        _admin(request)
+        return JSONResponse({"reviews": reviews.list_reviews(pseudonym or None)})
 
     @app.get("/")
     async def index() -> HTMLResponse:
