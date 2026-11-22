@@ -18,7 +18,7 @@ if (!voices.unsupported.includes("Microsoft")) throw new Error("edge voice");
 const review = ui.buildReview({
   consent: true,
   pseudonym: "甲",
-  pageVersion: "zhiyu-20261122h",
+  pageVersion: "v1.8",
   scenario: { row: 36 },
   turns: [{ role: "user", text: "是我们", false_barge_in: true }],
   echoCancellation: true,

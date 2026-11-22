@@ -659,7 +659,7 @@ refreshHistory().catch(() => {});
 refreshBargeMarks();
 
 if (typeof ZhiyuUI === "undefined") {
-  zhiyuPageFailed("页面脚本没有执行。页脚必须是 zhiyu-20261122h，否则不是这次的服务。");
+  zhiyuPageFailed("页面脚本没有执行。页脚必须是 v1.8，否则不是这次的服务。");
 }
 
 loadStatus()

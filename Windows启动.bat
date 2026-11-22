@@ -41,7 +41,7 @@ exit /b 0
 echo.
 echo 7860 is still serving an older page.
 echo Stop that black window with Ctrl+C, then double-click this file again.
-echo Refreshing the browser is not enough. The footer must show zhiyu-20261122h.
+echo Refreshing the browser is not enough. The footer must show v1.8.
 pause
 exit /b 12
 

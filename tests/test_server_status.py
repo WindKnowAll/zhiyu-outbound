@@ -17,13 +17,13 @@ def test_homepage_and_status_open_without_a_key(monkeypatch):
         assert "京东 POP 商家资质审核比赛模拟客服" in page.text
         assert "不是京东官方服务" in page.text
         assert page.text.count("<option ") >= 68
-        assert "zhiyu-20261122h" in page.text
+        assert "v1.8" in page.text
         assert "serviceWorker.register" not in page.text
         for old in ("图书馆", "星河", "取书", "小语"):
             assert old not in page.text
         build = client.get("/api/build")
         assert build.status_code == 200
-        assert build.json()["page_version"] == "zhiyu-20261122h"
+        assert build.json()["page_version"] == "v1.8"
         assert build.json()["service_worker"] is False
         assert build.json()["scenario_count"] == 68
         script = client.get("/static/app.js")
@@ -42,6 +42,7 @@ def test_homepage_and_status_open_without_a_key(monkeypatch):
         status = client.get("/api/status")
         assert status.status_code == 200
         body = status.json()
+        assert body["page_version"] == "v1.8"
         assert body["ok"] is False
         assert "DASHSCOPE_API_KEY" in body["message"]
 

@@ -16,7 +16,7 @@ def _sample() -> dict:
         "raw_audio": False,
         "consent": True,
         "pseudonym": "甲",
-        "page_version": "zhiyu-20261122h",
+        "page_version": "v1.8",
         "scenario": {
             "row": 36,
             "menu": "品牌",
