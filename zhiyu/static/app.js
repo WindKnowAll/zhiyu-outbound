@@ -41,6 +41,8 @@ let scenarios = [];
 let callLog = { turns: [], traces: [], timings: [] };
 let collectEnabled = false;
 let callGate = false;
+const reviewFold = document.getElementById("review");
+if (reviewFold) reviewFold.open = window.matchMedia("(min-width: 960px)").matches;
 
 function setBanner(text, ok) {
   if (!text) {

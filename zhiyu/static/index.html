@@ -75,7 +75,9 @@
       </div>
 
       <div class="col-record">
-      <section class="review" id="review" aria-label="试听记录">
+      <details class="review-fold" id="review">
+      <summary>保存试听记录</summary>
+      <section class="review" aria-label="试听记录">
         <h2>试听记录</h2>
         <p class="scenario-note">合成商家的比赛模拟。录音默认不采集。保存和下载都停在这台电脑，不会自动发给任何人，也不会拿去自动训练。</p>
         <label id="call-token-label" hidden>通话口令 <input id="call-token" type="password" autocomplete="off" /></label>
@@ -94,15 +96,18 @@
         <pre id="review-preview">还没有预览。</pre>
         <h3>本机已保存</h3>
         <ul id="history"></ul>
-        <h3>以后人工抽查的例句</h3>
-        <ul id="eval-prompts"></ul>
         <p class="scenario-note" id="hosting-note">预定给队友用的是一台长期开着的 HTTPS 服务器，不是把这台电脑打成公网隧道。手机上的 127.0.0.1 指向手机自己。这次还没购买或开通，集中收集默认关闭，不能当成已经可以公开使用。</p>
+      </section>
+      </details>
+      <section class="eval-keep" aria-label="人工抽查例句">
+        <h3>人工抽查例句</h3>
+        <ul id="eval-prompts"></ul>
       </section>
       </div>
       </div>
 
       <footer>
-        <p id="build">页面版本 v1.8。智语外呼，京东 POP 商家资质审核比赛模拟客服。不是京东官方服务。不索要验证码、密码、银行卡或身份证，也不保证审核通过。</p>
+        <p id="build">页面版本 v1.8（构建 <!--BUILD-->）。智语外呼，京东 POP 商家资质审核比赛模拟客服。不是京东官方服务。不索要验证码、密码、银行卡或身份证，也不保证审核通过。</p>
       </footer>
     </main>
     <script>

@@ -12,7 +12,7 @@ source "$ENV_FILE"
 set +a
 BASE=http://127.0.0.1:7860
 python3 - "$BASE" << 'PY'
-import json, os, sys, urllib.error, urllib.request
+import json, os, sys, urllib.error, urllib.parse, urllib.request
 base = sys.argv[1]
 def get(path, token=""):
     req = urllib.request.Request(base + path)
@@ -61,10 +61,18 @@ req.add_header("Content-Type", "application/json")
 with urllib.request.urlopen(req) as resp:
     saved = json.loads(resp.read().decode())
 assert saved.get("pseudonym") == "验收"
-assert saved.get("raw_audio") is False
-code, _ = get("/api/collect?pseudonym=" + "甲", submit)
+review_id = saved.get("id")
+assert review_id
+stored_req = urllib.request.Request(base + "/api/collect/" + urllib.parse.quote(review_id))
+stored_req.add_header("Authorization", "Bearer " + admin)
+with urllib.request.urlopen(stored_req) as resp:
+    stored = json.loads(resp.read().decode())
+assert stored.get("raw_audio") is False
+assert stored.get("consent") is True
+assert stored.get("id") == review_id
+code, _ = get("/api/collect?" + urllib.parse.urlencode({"pseudonym": "甲"}), submit)
 assert code == 401
-req = urllib.request.Request(base + "/api/collect?pseudonym=" + "验收")
+req = urllib.request.Request(base + "/api/collect?" + urllib.parse.urlencode({"pseudonym": "验收"}))
 req.add_header("Authorization", "Bearer " + admin)
 with urllib.request.urlopen(req) as resp:
     listed = json.loads(resp.read().decode())

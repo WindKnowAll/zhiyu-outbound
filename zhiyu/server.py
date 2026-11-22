@@ -73,6 +73,7 @@ def page_build() -> dict:
         "page_version": PAGE_VERSION,
         "service_worker": False,
         "scenario_count": len(scenario_choices(load_catalog())),
+        "build_hash": hashlib.sha256("".join(item["sha256"] for item in files).encode()).hexdigest()[:12],
         "files": files,
     }
 
@@ -101,7 +102,8 @@ def scenario_options_html() -> str:
 
 def render_index() -> str:
     text = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    return text.replace("<!--SCENARIOS-->", scenario_options_html())
+    text = text.replace("<!--SCENARIOS-->", scenario_options_html())
+    return text.replace("<!--BUILD-->", page_build()["build_hash"])
 
 
 def parse_call_vad(raw: object, settings: Settings) -> dict | None:
@@ -422,6 +424,19 @@ def create_app(
         except ReviewRejected as exc:
             return JSONResponse(status_code=400, content={"message": str(exc)})
         return JSONResponse({"id": saved["id"], "pseudonym": saved["pseudonym"]})
+
+    @app.get("/api/collect/{review_id}")
+    async def collect_one(review_id: str, request: Request) -> JSONResponse:
+        if not collect_on:
+            raise HTTPException(status_code=404, detail="集中收集没有启用。")
+        _admin(request)
+        try:
+            found = reviews.get(review_id)
+        except ReviewRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        if found is None:
+            raise HTTPException(status_code=404, detail="没有这条记录。")
+        return JSONResponse(found)
 
     @app.get("/api/collect")
     async def collect_list(request: Request, pseudonym: str = "") -> JSONResponse:

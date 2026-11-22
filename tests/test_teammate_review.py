@@ -119,6 +119,11 @@ def test_collect_requires_admin_token_and_isolates_pseudonym(tmp_path):
         assert client.get("/api/collect", headers=submit).status_code == 401
         only_jia = client.get("/api/collect", params={"pseudonym": "甲"}, headers=admin)
         assert [item["pseudonym"] for item in only_jia.json()["reviews"]] == ["甲"]
+        stored = client.get(f"/api/collect/{first.json()['id']}", headers=admin)
+        assert stored.status_code == 200
+        assert stored.json()["raw_audio"] is False
+        assert stored.json()["consent"] is True
+        assert client.get(f"/api/collect/{first.json()['id']}", headers=submit).status_code == 401
         assert client.get("/api/collect").status_code == 401
         assert client.get("/api/collection").json()["public_ready"] is False
         assert client.post("/api/reviews", json=_sample()).status_code == 403

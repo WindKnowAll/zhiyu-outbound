@@ -15,7 +15,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/zhiyu
+ReadWritePaths=/var/lib/zhiyu /opt/zhiyu/current/var /opt/zhiyu/releases/v1.8/var
 
 [Install]
 WantedBy=multi-user.target

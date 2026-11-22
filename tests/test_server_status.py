@@ -24,6 +24,7 @@ def test_homepage_and_status_open_without_a_key(monkeypatch):
         build = client.get("/api/build")
         assert build.status_code == 200
         assert build.json()["page_version"] == "v1.8"
+        assert len(build.json()["build_hash"]) == 12
         assert build.json()["service_worker"] is False
         assert build.json()["scenario_count"] == 68
         script = client.get("/static/app.js")

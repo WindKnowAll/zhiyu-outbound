@@ -213,6 +213,8 @@ footer p { font-size: 13px; }
   font-size: 14px;
 }
 
+.review label[hidden] { display: none; }
+
 textarea, input[type="text"], input:not([type="checkbox"]):not([type="range"]):not([type="file"]) {
   width: 100%;
   padding: 8px 10px;
@@ -237,6 +239,17 @@ textarea, input[type="text"], input:not([type="checkbox"]):not([type="range"]):n
 
 @media (max-width: 959px) {
   .desk { display: contents; }
+  details.review-fold:not([open]) > :not(summary) { display: none; }
+  details.review-fold > summary {
+    display: block;
+    margin: 12px 0;
+    color: var(--pine);
+    cursor: pointer;
+  }
+}
+
+@media (min-width: 960px) {
+  details.review-fold > summary { display: none; }
 }
 
 @media (max-width: 430px) {
