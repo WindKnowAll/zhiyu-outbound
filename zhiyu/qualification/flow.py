@@ -186,6 +186,7 @@ class QualificationCall:
     appointment: str = ""
     script_text: str = ""
     greeted: bool = False
+    session_id: str = ""
     pending: Decision | None = None
     ticket_written: bool = False
     last_resolution: dict | None = None
@@ -384,6 +385,7 @@ class QualificationCall:
             "system": "本项目本地模拟工单，不是京东官方接口",
             "idempotency_key": f"{self.case.case_id}:{self.case.submissions}:{self.result or '未完成'}",
             "case_id": self.case.case_id,
+            "call_session_id": self.session_id,
             "simulation": True,
             "merchant_synthetic": True,
             "company": self.case.company,

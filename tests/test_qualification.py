@@ -27,12 +27,16 @@ from zhiyu.qualification.flow import (
     match_answer,
     new_call,
     phone_disposition,
+    resolve_turn,
     pick_scenario,
     resolve_scenario_id,
     scenario_choices,
     scenario_of,
 )
+from zhiyu.extensions import TurnRecord
+from zhiyu.pipeline.timing import StageTimings
 from zhiyu.qualification.hooks import QualificationHooks
+from zhiyu.teammate.review import ReviewStore
 from zhiyu.session import CallSession
 from zhiyu.transport.processor import VoiceSessionProcessor
 
@@ -868,6 +872,109 @@ async def test_interrupted_transfer_still_writes_one_ticket(tmp_path):
     assert len(list(tmp_path.glob("*.json"))) == 1
 
 
+@pytest.mark.case(
+    id="QA-68",
+    scenario="68 条场景的离线替身回归",
+    kind="离线意图 JSON，不是百炼实呼",
+    expected="54 条电话和 14 条京麦各自说出原表或明确兜底，挂断工单与异常记录用同一个通话编号",
+)
+@pytest.mark.asyncio
+async def test_all_scenarios_offline_link_ticket_and_incident(tmp_path):
+    """模型回复是测试里写死的 JSON。provider_status=success 只表示这句 JSON 能解析，不是真实请求成功。"""
+
+    catalog = load_catalog()
+    phone = [item for item in catalog.scenarios if item.close_method == "电话"]
+    jingmai = [item for item in catalog.scenarios if item.close_method == "京麦驳回"]
+    assert len(phone) == 54
+    assert len(jingmai) == 14
+    store = TicketStore(tmp_path / "tickets")
+    reviews = ReviewStore(tmp_path / "reviews")
+    model_reply = '{"intent":"confirm","reply":"我保证审核通过，并且转接真人。"}'
+    for scenario in catalog.scenarios:
+        call = new_call(case_for_row(scenario.row), catalog)
+        call.session_id = f"pc-offline-{scenario.row}"
+        hooks = QualificationHooks(call=call, store=store)
+        hooks.note_greeted()
+        decision, source = resolve_turn(call, "是的，我是这家公司", model_reply)
+        assert source == "model"
+        assert call.last_resolution["provider_status"] == "success"
+        assert "保证审核通过" not in decision.speak
+        assert "转接真人" not in decision.speak
+        text, complete = filled_script(scenario, call.case.brand)
+        audible = guard_customer_speech(text) if complete else ""
+        if complete and audible and audible != SAFE_FALLBACK:
+            assert audible[:12] in decision.speak
+            if scenario.close_method == "京麦驳回":
+                assert decision.speak.startswith("这条申请的关单方式是京麦驳回")
+            else:
+                assert not decision.speak.startswith("这条申请的关单方式是京麦驳回")
+        else:
+            assert decision.speak == SAFE_FALLBACK
+            assert decision.result == "缺话术转人工"
+        await hooks.after_turn(TurnRecord("是的，我是这家公司", decision.speak, False, StageTimings(), []))
+        if call.stage != "closed":
+            unknown, unknown_source = resolve_turn(
+                call,
+                "xyz完全无关的问题为什么",
+                '{"intent":"question","reply":"请打10086，我保证通过。"}',
+            )
+            assert "10086" not in unknown.speak
+            assert "保证通过" not in unknown.speak
+            if match_answer(catalog, "xyz完全无关的问题为什么") is None:
+                assert unknown.speak == SAFE_FALLBACK
+                assert unknown_source == "model"
+            await hooks.after_turn(TurnRecord("xyz完全无关的问题为什么", unknown.speak, False, StageTimings(), []))
+        if not call.ticket_written:
+            hooks.on_hangup()
+        files = [path for path in store.directory.glob("*.json") if json.loads(path.read_text(encoding="utf-8"))["source_row"] == scenario.row]
+        assert len(files) == 1
+        ticket = json.loads(files[0].read_text(encoding="utf-8"))
+        assert ticket["mock"] is True
+        assert ticket["simulation"] is True
+        assert ticket["call_session_id"] == f"pc-offline-{scenario.row}"
+        assert ticket["close_method"] == scenario.close_method
+        assert ticket["live_transfer"] is False
+        if not complete or audible == SAFE_FALLBACK or not audible:
+            assert ticket["reason_text"] == ""
+        saved = reviews.save(
+            {
+                "schema": "zhiyu.teammate_review.v1",
+                "synthetic": True,
+                "raw_audio": False,
+                "consent": True,
+                "pseudonym": "甲",
+                "page_version": "v1.8",
+                "scenario": {
+                    "row": scenario.row,
+                    "menu": scenario.menu,
+                    "category": scenario.category,
+                    "reason": scenario.reason,
+                    "close_method": scenario.close_method,
+                    "script_complete": scenario.script_complete,
+                },
+                "session_id": ticket["call_session_id"],
+                "call_link": "recent",
+                "idempotency_key": f"{scenario.row:08d}-1111-4111-8111-111111111111",
+                "turns": [],
+                "provider_traces": [],
+                "stage_timings": [],
+                "feedback": {
+                    "expected": "",
+                    "actual": "",
+                    "incident": "" if scenario.row != 36 else "离线替身，不是真机",
+                    "suggestion": "",
+                },
+            }
+        )
+        assert saved["session_id"] == ticket["call_session_id"]
+        assert saved["raw_audio"] is False
+    assert len(list(store.directory.glob("*.json"))) == 68
+    linked = reviews.export_records(incidents_only=True)
+    assert len(linked) == 1
+    assert linked[0]["session_id"] == "pc-offline-36"
+    assert linked[0]["scenario"]["row"] == 36
+
+
 def test_scenario_pool_covers_every_row_and_rejects_foreign_ids():
     catalog = load_catalog()
     rows = [item.row for item in catalog.scenarios]
@@ -932,5 +1039,6 @@ async def test_audio_frame_enters_the_qualification_processor():
     assert "比赛模拟" in processor._opening
     assert "图书馆" not in processor._opening
     assert processor._hooks.call.scenario.row == 36
+    assert processor._hooks.call.session_id == "qa-audio"
     await processor.shutdown()
     assert recognizer.stopped == 1

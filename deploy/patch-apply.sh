@@ -16,14 +16,9 @@ case "$ROOT" in
   /etc|/etc/*) echo "拒绝写入 /etc" >&2; exit 1 ;;
 esac
 FILES=(
-  zhiyu/config.py
-  zhiyu/server.py
-  zhiyu/turn_ice.py
-  zhiyu/static/app.js
-  zhiyu/static/call_ui.js
+  zhiyu/qualification/flow.py
+  zhiyu/transport/processor.py
   deploy/patch-apply.sh
-  deploy/coturn-apply.sh
-  deploy/coturn-rollback.sh
 )
 for rel in "${FILES[@]}"; do
   if [[ "$rel" == *.env || "$rel" == *zhiyu.env ]]; then

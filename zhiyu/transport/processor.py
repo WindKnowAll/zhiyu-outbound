@@ -79,6 +79,7 @@ class VoiceSessionProcessor(FrameProcessor):
 
             call = new_call(case_for_row(scenario_row))
         self._hooks = QualificationHooks(call=call, emit=session.add)
+        self._hooks.call.session_id = session.pc_id
         self._opening = self._hooks.opening()
         self._session = session
         self._recognizer = recognizer
