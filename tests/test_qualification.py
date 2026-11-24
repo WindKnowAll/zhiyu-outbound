@@ -24,6 +24,7 @@ from zhiyu.qualification.flow import (
     default_case,
     filled_script,
     guard_customer_speech,
+    is_why_followup,
     match_answer,
     new_call,
     phone_disposition,
@@ -981,7 +982,10 @@ async def test_all_scenarios_offline_link_ticket_and_incident(tmp_path):
             )
             assert "10086" not in unknown.speak
             assert "保证通过" not in unknown.speak
-            if match_answer(catalog, "xyz完全无关的问题为什么") is None:
+            if is_why_followup("xyz完全无关的问题为什么"):
+                assert SAFE_FALLBACK not in unknown.speak
+                assert unknown.closed is False or "不能另外编" in unknown.speak
+            elif match_answer(catalog, "xyz完全无关的问题为什么") is None:
                 assert unknown.speak == SAFE_FALLBACK
                 assert unknown_source == "model"
             await hooks.after_turn(TurnRecord("xyz完全无关的问题为什么", unknown.speak, False, StageTimings(), []))

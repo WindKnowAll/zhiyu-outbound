@@ -1,5 +1,5 @@
 #!/bin/bash
-# 从已部署的 v1.8 构建 05e64542da37 更新文字调试页的深色青绿布局。
+# 从已部署的 v1.8 构建 ed30f2bf0239 更新追问原因和话术记忆。
 # 先核对基线，再备份程序，然后覆盖文件。不读取、不修改 /etc/zhiyu/zhiyu.env，
 # 不删除试听数据、工单和 TLS，不改 nginx、证书和 TURN，不安装依赖。
 set -euo pipefail
@@ -24,9 +24,9 @@ MODE=$(python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-before.json", encoding="utf-8"))
 current = str(body.get("build_hash") or "")
-if current == "ed30f2bf0239":
+if current == "2c7d00ff9cc1":
     print("already")
-elif current == "05e64542da37":
+elif current == "ed30f2bf0239":
     print("ok")
 else:
     print("refuse")
@@ -34,18 +34,25 @@ PY
 )
 rm -f /tmp/zhiyu-patch-before.json
 if [[ "$MODE" == "already" ]]; then
-  echo "当前已是 ed30f2bf0239，不再覆盖。"
+  echo "当前已是 2c7d00ff9cc1，不再覆盖。"
   exit 0
 fi
 if [[ "$MODE" != "ok" ]]; then
-  echo "拒绝：这个补丁只从已部署的构建 05e64542da37 升级。环境、数据和证书没有改。" >&2
+  echo "拒绝：这个补丁只从已部署的构建 ed30f2bf0239 升级。环境、数据和证书没有改。" >&2
   exit 1
 fi
-echo "基线核对通过：05e64542da37"
+echo "基线核对通过：ed30f2bf0239"
 FILES=(
+  zhiyu/qualification/flow.py
+  zhiyu/server.py
+  zhiyu/text_debug.py
+  zhiyu/transport/bot.py
+  zhiyu/transport/processor.py
+  zhiyu/learning/__init__.py
+  zhiyu/learning/store.py
+  zhiyu/learning/cli.py
   zhiyu/static/debug.html
-  zhiyu/static/debug.js
-  zhiyu/static/style.css
+  docs/learning.md
   deploy/patch-apply.sh
 )
 for rel in "${FILES[@]}"; do
@@ -86,7 +93,7 @@ python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-build.json", encoding="utf-8"))
 assert body.get("page_version") == "v1.8", body.get("page_version")
-assert body.get("build_hash") == "ed30f2bf0239", body.get("build_hash")
+assert body.get("build_hash") == "2c7d00ff9cc1", body.get("build_hash")
 print("page_version=v1.8 build_hash=" + str(body.get("build_hash")))
 PY
 rm -f /tmp/zhiyu-patch-build.json

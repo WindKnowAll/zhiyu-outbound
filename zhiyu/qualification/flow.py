@@ -84,6 +84,63 @@ def asks_to_break_rules(text: str) -> bool:
     return any(word in text for word in ("忽略", "指令", "提示词", "系统提示", "原表", "密钥"))
 
 
+_WHY_WORDS = (
+    "为什么",
+    "为何",
+    "哪里有问题",
+    "哪儿有问题",
+    "什么问题",
+    "哪里不对",
+    "为什么不通过",
+    "怎么不通过",
+)
+_STOP_WORDS = ("别打了", "不想听", "不要再打", "再见", "挂了", "不用再说")
+
+
+def is_why_followup(text: str) -> bool:
+    """短追问。单独的「为什么」不是结束，也不是拒绝。"""
+
+    raw = text.strip()
+    if any(word in raw for word in _STOP_WORDS):
+        return False
+    if strong_deny(raw):
+        return False
+    return any(word in raw for word in _WHY_WORDS)
+
+
+def why_reply(call: QualificationCall) -> Decision:
+    """只用这一条已经能说的原因。没有原话就不编，并礼貌结束。"""
+
+    store = getattr(call, "learning", None)
+    learned = ""
+    if store is not None:
+        try:
+            learned = str(store.active_speak(call.scenario.row, "why") or "")
+        except Exception:
+            learned = ""
+    pause = "好，先停一下。" if any(word in getattr(call, "_why_text", "") for word in ("停停", "等一下", "等一等")) else ""
+    if learned:
+        return Decision(speak=pause + learned)
+    text, complete = filled_script(call.scenario, call.case.brand)
+    spoken = customer_wording(text) if complete else ""
+    reason = call.scenario.reason.strip()
+    short = reason.split("（")[0].strip()
+    # 整改分句为空也不终止。只复述原表已经有的原因，不补写操作步骤。
+    if spoken and reason and reason in spoken:
+        body = f"因为{reason}。您还有不清楚的吗？"
+    elif spoken and short and short in spoken:
+        body = f"因为{reason}。您还有不清楚的吗？"
+    elif spoken:
+        body = spoken.rstrip("。！! ") + "。您还有不清楚的吗？"
+    else:
+        return Decision(
+            speak=pause + "这条没有可以引用的具体原因，我不能另外编。感谢您的接听，再见。",
+            closed=True,
+            result="缺话术礼貌结束",
+        )
+    return Decision(speak=pause + body)
+
+
 def asks_rejection_reason(text: str) -> bool:
     return any(
         word in text
@@ -124,6 +181,11 @@ def conversational_override(call: QualificationCall, user_text: str) -> Decision
 
     if asks_to_break_rules(user_text):
         return None
+    if any(word in user_text for word in ("再见", "挂了", "不用再说")) and call.identity_confirmed:
+        return Decision(speak=GOODBYE, closed=True, result="已知晓")
+    if call.identity_confirmed and call.disclosed and is_why_followup(user_text):
+        call._why_text = user_text
+        return why_reply(call)
     if (
         call.identity_confirmed
         and call.disclosed
@@ -198,6 +260,7 @@ class QualificationCall:
     pending: Decision | None = None
     ticket_written: bool = False
     last_resolution: dict | None = None
+    learning: object | None = None
 
     def opening(self) -> str:
         return (
@@ -652,6 +715,19 @@ class TicketStore:
             kept["kept_in_memory"] = True
             return kept
 
+    def source_row(self, session_id: str) -> int | None:
+        if not session_id or not self.directory.is_dir():
+            return None
+        for path in sorted(self.directory.glob("*.json")):
+            try:
+                item = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(item, dict) and item.get("call_session_id") == session_id:
+                row = item.get("source_row")
+                return int(row) if isinstance(row, int) else None
+        return None
+
     def attach_incident(self, session_id: str, text: str, image: str) -> list[str]:
         """把异常文字和图片路径写进同一通的模拟工单。没有工单时返回空列表。"""
 
@@ -800,7 +876,21 @@ def intent_system_prompt(call: QualificationCall) -> str:
         + "\n字段 reply 是给商家听的一句口语。身份还没确认时，reply 不能包含驳回原因。"
         + "\n若 intent 为 confirm 且身份还没确认，reply 使用下面这条说明，不要另写政策：\n"
         + material
+        + _approved_why_line(call)
     )
+
+
+def _approved_why_line(call: QualificationCall) -> str:
+    store = getattr(call, "learning", None)
+    if store is None:
+        return ""
+    try:
+        learned = str(store.active_speak(call.scenario.row, "why") or "")
+    except Exception:
+        return ""
+    if not learned:
+        return ""
+    return "\n若商家追问原因且身份已确认，reply 只能原样使用这句已审核话术，不要另编：\n" + learned
 
 
 def resolve_turn(call: QualificationCall, user_text: str, model_raw: str) -> tuple[Decision, str]:
@@ -826,6 +916,13 @@ def resolve_turn(call: QualificationCall, user_text: str, model_raw: str) -> tup
         intent = "wrong_number"
         source = "fallback"
         fallback_reason = "strong_deny"
+    elif any(word in user_text for word in ("别打了", "不想听", "不要再打")):
+        intent = "refuse"
+        if parsed is not None and parsed["intent"] == "refuse":
+            source = "model"
+        else:
+            source = "fallback"
+            fallback_reason = "strong_refuse"
     elif strong_confirm(user_text) and parsed is not None and parsed["intent"] == "confirm":
         intent = "confirm"
         source = "model"

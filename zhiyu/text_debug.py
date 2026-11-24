@@ -18,12 +18,13 @@ from zhiyu.qualification.hooks import QualificationHooks
 
 
 class TextDebugSession:
-    def __init__(self, catalog: Catalog, row: int, store: TicketStore) -> None:
+    def __init__(self, catalog: Catalog, row: int, store: TicketStore, learning: object | None = None) -> None:
         self.session_id = "text-" + uuid.uuid4().hex
         self.catalog = catalog
         self.row = resolve_scenario_id(row, catalog)
         call = new_call(case_for_row(self.row), catalog)
         call.session_id = self.session_id
+        call.learning = learning
         self.hooks = QualificationHooks(call=call, store=store)
         self.history: list[dict[str, str]] = []
         self.model = None

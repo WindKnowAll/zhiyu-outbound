@@ -28,6 +28,7 @@ async def run_bot(
     hub: SessionHub,
     scenario_row: int | None = None,
     vad_override: dict | None = None,
+    learning: object | None = None,
 ) -> None:
     session = hub.open(connection.pc_id)
     logger.info("开始通话 {}", connection.pc_id)
@@ -48,6 +49,7 @@ async def run_bot(
         tts_factory=lambda: create_synthesizer(settings),
         scenario_row=scenario_row,
         vad_override=vad_override,
+        learning=learning,
     )
     transport = SmallWebRTCTransport(
         webrtc_connection=connection,

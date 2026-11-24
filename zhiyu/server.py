@@ -179,6 +179,8 @@ def create_app(
     collect_submit_token: str | None = None,
     call_token: str | None = None,
     text_model=None,
+    learning_dir: Path | None = None,
+    learning_admin_token: str | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     persona = load_persona()
@@ -186,10 +188,16 @@ def create_app(
     reviews = ReviewStore(review_dir or (ROOT / "var" / "teammate_reviews"))
     incidents = IncidentStore(incident_dir or (ROOT / "var" / "incidents"))
     tickets = TicketStore(ticket_dir or (ROOT / "var" / "mock_tickets"))
+    from zhiyu.learning.store import LearningRejected, LearningStore
+
+    learning = LearningStore(learning_dir or (ROOT / "var" / "learning"))
     text_sessions: dict[str, TextDebugSession] = {}
     collect_on, admin_token, submit_token = collect_config(
         collect_enabled, collect_token, collect_submit_token
     )
+    learning_admin = (learning_admin_token if learning_admin_token is not None else admin_token).strip()
+    if len(learning_admin) < 16:
+        learning_admin = ""
     if call_token is None:
         call_token = os.environ.get("ZHIYU_CALL_TOKEN", "")
     call_token = call_token.strip()
@@ -305,6 +313,7 @@ def create_app(
                 hub,
                 scenario_row,
                 vad_override,
+                learning,
             )
 
         async with ice_lock:
@@ -404,6 +413,53 @@ def create_app(
             return JSONResponse(status_code=401, content={"message": "需要管理员令牌。"})
         return None
 
+    def _learning_admin(request: Request) -> JSONResponse | None:
+        presented = _bearer(request)
+        if not learning_admin or presented != learning_admin or presented == (call_token or ""):
+            return JSONResponse(status_code=401, content={"message": "需要管理员令牌。通话口令不能审核。"})
+        return None
+
+    @app.get("/api/learning")
+    async def learning_list(request: Request) -> JSONResponse:
+        denied = _learning_admin(request)
+        if denied is not None:
+            return denied
+        return JSONResponse({"items": learning.list_items()})
+
+    async def _learning_action(item_id: str, request: Request, action: str) -> JSONResponse:
+        denied = _learning_admin(request)
+        if denied is not None:
+            return denied
+        try:
+            if action == "approve":
+                payload = await request.json()
+                item = learning.approve(item_id, str(payload.get("speak") or ""))
+            elif action == "reject":
+                item = learning.reject(item_id)
+            elif action == "disable":
+                item = learning.disable(item_id)
+            else:
+                item = learning.rollback(item_id)
+        except LearningRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        return JSONResponse(item)
+
+    @app.post("/api/learning/{item_id}/approve")
+    async def learning_approve(item_id: str, request: Request) -> JSONResponse:
+        return await _learning_action(item_id, request, "approve")
+
+    @app.post("/api/learning/{item_id}/reject")
+    async def learning_reject(item_id: str, request: Request) -> JSONResponse:
+        return await _learning_action(item_id, request, "reject")
+
+    @app.post("/api/learning/{item_id}/disable")
+    async def learning_disable(item_id: str, request: Request) -> JSONResponse:
+        return await _learning_action(item_id, request, "disable")
+
+    @app.post("/api/learning/{item_id}/rollback")
+    async def learning_rollback(item_id: str, request: Request) -> JSONResponse:
+        return await _learning_action(item_id, request, "rollback")
+
     @app.post("/api/incidents")
     async def incident_save(request: Request) -> JSONResponse:
         denied = _call_gate(request, "需要通话口令。没有口令不会提交异常。")
@@ -439,6 +495,13 @@ def create_app(
             names = tickets.attach_incident(session_id, saved["text"], saved["image"])
             if names:
                 saved = incidents.mark_attached(saved["id"], names)
+            row = tickets.source_row(session_id)
+            if row is not None:
+                intent = "why" if any(word in text for word in ("为什么", "为何", "哪里有问题")) else "other"
+                try:
+                    learning.propose(source_row=row, intent=intent, note=text, incident_id=str(saved["id"]))
+                except Exception:
+                    logger.exception("异常候选没有记下")
         except IncidentRejected as exc:
             return JSONResponse(status_code=400, content={"message": str(exc)})
         return JSONResponse(
@@ -701,7 +764,7 @@ def create_app(
         payload = await request.json()
         try:
             row = choose_row(load_catalog(), payload.get("scenario_id"), bool(payload.get("random")))
-            session = TextDebugSession(load_catalog(), row, tickets)
+            session = TextDebugSession(load_catalog(), row, tickets, learning)
             session.model = _text_model()
         except ProviderError as exc:
             return JSONResponse(status_code=503, content={"message": str(exc)})
