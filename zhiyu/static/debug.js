@@ -9,6 +9,7 @@ const endEl = document.getElementById("end");
 const randomEl = document.getElementById("random");
 
 let sessionId = "";
+let linkedSession = "";
 let callGate = false;
 let sending = false;
 
@@ -102,6 +103,7 @@ async function startSession(randomPick) {
     return;
   }
   sessionId = body.session_id;
+  linkedSession = body.session_id;
   scenarioEl.value = String(body.row);
   linesEl.replaceChildren();
   addLine("assistant", body.opening || "");
@@ -162,7 +164,70 @@ async function finishSession() {
   sendEl.disabled = true;
   endEl.disabled = true;
   sessionId = "";
-  setBanner(body.ticket_written ? "模拟工单已写。可以返回语音首页。" : "这通文字已结束。", true);
+  setBanner(body.ticket_written ? "模拟工单已写。异常记录会使用这次的编号。" : "这通文字已结束。", true);
+}
+
+document.getElementById("incident-record").addEventListener("click", () => {
+  document.getElementById("debug-incident").hidden = false;
+});
+
+document.getElementById("incident-image").addEventListener("change", () => {
+  const file = document.getElementById("incident-image").files[0];
+  const note = document.getElementById("incident-file");
+  note.textContent = file ? file.name + "，" + Math.ceil(file.size / 1024) + " KB" : "还没有选择图片。";
+});
+
+document.getElementById("debug-incident").addEventListener("submit", (event) => {
+  event.preventDefault();
+  sendIncident();
+});
+
+function showIncidentResult(ok, text) {
+  const result = document.getElementById("incident-result");
+  result.className = ok ? "ok" : "bad";
+  result.textContent = text;
+}
+
+async function sendIncident() {
+  const what = document.getElementById("incident-what").value.trim();
+  if (!linkedSession) {
+    showIncidentResult(false, "提交失败：请先开始文字对话。已填内容还在。");
+    return;
+  }
+  if (!what) {
+    showIncidentResult(false, "提交失败：请先写一段具体情况。已填内容还在。");
+    return;
+  }
+  if (callGate && !document.getElementById("call-token").value.trim()) {
+    showIncidentResult(false, "提交失败：需要通话口令。已填内容还在。");
+    return;
+  }
+  const body = new FormData();
+  body.set("text", what);
+  body.set("call_session_id", linkedSession);
+  const file = document.getElementById("incident-image").files[0];
+  if (file) body.set("image", file, file.name);
+  const button = document.getElementById("incident-send");
+  button.disabled = true;
+  let response;
+  try {
+    const token = document.getElementById("call-token").value.trim();
+    const requestHeaders = {};
+    if (token) requestHeaders["X-Zhiyu-Call-Token"] = token;
+    response = await fetch("/api/incidents", { method: "POST", headers: requestHeaders, body: body });
+  } catch (error) {
+    button.disabled = false;
+    showIncidentResult(false, "提交失败：没有连上服务器。已填内容还在，可以再试。");
+    return;
+  }
+  const payload = await readJson(response);
+  button.disabled = false;
+  if (!response.ok || !payload.ok) {
+    showIncidentResult(false, "提交失败：" + (payload.message || "服务器没有保存。") + "已填内容还在，可以再试。");
+    return;
+  }
+  const where = payload.ticket_attached ? "已写进本次模拟工单。" : "已保存在服务器。结束并写工单后会按这次编号关联。";
+  showIncidentResult(true, "提交成功。" + where);
 }
 
 fetch("/api/collection")

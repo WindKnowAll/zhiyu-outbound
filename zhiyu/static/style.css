@@ -119,7 +119,7 @@ button:disabled {
 
 button.hangup { background: var(--clay); }
 
-a.text-link {
+.debug-page a.back-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -132,11 +132,19 @@ a.text-link {
   background: transparent;
 }
 
-.debug-page .composer, #composer {
+.debug-page #composer,
+.debug-page #debug-incident {
   display: grid;
   gap: 10px;
   margin-top: 16px;
 }
+
+.debug-page #debug-incident[hidden] { display: none; }
+.debug-page #debug-incident textarea { font-size: 16px; line-height: 1.5; }
+.debug-page #incident-result { margin: 0; padding: 12px; border-radius: 12px; }
+.debug-page #incident-result:empty { display: none; }
+.debug-page #incident-result.ok { background: #e5f2ea; color: var(--pine-dark); }
+.debug-page #incident-result.bad { background: #f8e6df; color: var(--clay); }
 
 .actions {
   display: flex;

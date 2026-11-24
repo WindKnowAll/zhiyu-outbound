@@ -13,7 +13,7 @@
         <p class="eyebrow">文字调试 · 不是语音通话</p>
         <h1>文字调试</h1>
         <p class="lead">这里只用打字走资审状态机和千问。本页不采集声音，不识别，也不合成。语音通话仍在首页。</p>
-        <p><a class="text-link" href="/">返回语音首页</a></p>
+        <p><a class="back-link" href="/">返回语音首页</a></p>
       </header>
       <p id="banner" class="banner" hidden></p>
       <section class="scenarios" aria-label="选择测试场景">
@@ -24,6 +24,7 @@
           <button id="random" type="button">随机场景</button>
           <button id="begin" type="button">开始文字对话</button>
           <button id="end" type="button" disabled>结束并写工单</button>
+          <button id="incident-record" type="button">异常情况记录</button>
         </div>
         <label id="call-token-label" hidden>通话口令 <input id="call-token" type="password" autocomplete="off" /></label>
         <p id="scenario-note" class="scenario-note">随机只换场景，不会申请任何设备权限。</p>
@@ -36,6 +37,15 @@
         <label>输入 <textarea id="draft" rows="3" maxlength="2000" placeholder="打字发送。失败后文字还在，可以再试。"></textarea></label>
         <button id="send" type="submit" disabled>发送</button>
         <p id="wait" class="scenario-note" role="status"></p>
+      </form>
+      <form id="debug-incident" hidden>
+        <h2>异常情况记录</h2>
+        <p class="scenario-note">写一段具体情况，可选一张小于 5MB 的图片。提交发到服务器，并关联这次文字调试的工单编号。</p>
+        <label>具体情况 <textarea id="incident-what" rows="5" maxlength="2000"></textarea></label>
+        <label>图片（可选，小于 5MB） <input id="incident-image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" /></label>
+        <p id="incident-file" class="scenario-note">还没有选择图片。</p>
+        <button id="incident-send" type="submit">提交</button>
+        <p id="incident-result" role="status"></p>
       </form>
     </main>
     <script src="/static/debug.js?v=v1.8"></script>

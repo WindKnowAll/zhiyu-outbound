@@ -59,7 +59,14 @@ def test_debug_page_has_no_voice_api_and_voice_home_keeps_microphone_policy():
     assert "返回语音首页" in debug.text
     assert "permissions-policy" not in {key.lower() for key in home.headers}
     assert "开始通话" in home.text
-    assert 'href="/debug"' in home.text
+    assert home.text.count(">文字调试<") == 1
+    assert 'id="open-debug"' in home.text
+    assert "异常情况提交" in home.text
+    assert "异常情况记录" not in home.text
+    css = (ROOT / "zhiyu/static/style.css").read_text(encoding="utf-8")
+    assert "a.text-link" not in css
+    assert "\n#composer" not in css
+    assert ".debug-page #composer" in css
 
 
 def test_typed_turn_uses_model_and_never_starts_audio(tmp_path, monkeypatch):
@@ -74,6 +81,7 @@ def test_typed_turn_uses_model_and_never_starts_audio(tmp_path, monkeypatch):
         load_settings({"DASHSCOPE_API_KEY": ""}),
         preload_vad=False,
         ticket_dir=tmp_path,
+        incident_dir=tmp_path / "incidents",
         text_model=model,
         call_token="call-token-16chars",
     )
@@ -112,4 +120,17 @@ def test_typed_turn_uses_model_and_never_starts_audio(tmp_path, monkeypatch):
         assert ended.json()["ticket_written"] is True
         stored = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
         assert ended.json()["call_session_id"] in stored
+        noted = client.post(
+            "/api/incidents",
+            data={"text": "文字页记下的异常", "call_session_id": ended.json()["call_session_id"]},
+            files={"image": ("shot.jpg", b"\xff\xd8\xff" + b"\x00" * 16, "image/jpeg")},
+            headers=headers,
+        )
+        assert noted.status_code == 200
+        assert noted.json()["message"] == "提交成功"
+        assert noted.json()["ticket_attached"] is True
+        stored = next(tmp_path.glob("*.json")).read_text(encoding="utf-8")
+        assert "文字页记下的异常" in stored
+        assert noted.json()["image"] in stored
+        assert ".." not in noted.json()["image"]
     assert choose_row(load_catalog(), 36, False) == 36

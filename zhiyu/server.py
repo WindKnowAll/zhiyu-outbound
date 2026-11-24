@@ -750,7 +750,18 @@ def create_app(
         session = text_sessions.pop(session_id, None)
         if session is None:
             return JSONResponse(status_code=404, content={"message": "这场文字调试已经不在。"})
-        return JSONResponse(session.finish())
+        done = session.finish()
+        for item in incidents.list_records():
+            if item.get("call_session_id") != done["call_session_id"]:
+                continue
+            names = tickets.attach_incident(
+                done["call_session_id"],
+                str(item.get("text") or ""),
+                str(item.get("image") or ""),
+            )
+            if names:
+                incidents.mark_attached(str(item["id"]), names)
+        return JSONResponse(done)
 
     @app.get("/")
     async def index() -> HTMLResponse:

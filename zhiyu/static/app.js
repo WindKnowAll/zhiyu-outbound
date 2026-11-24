@@ -475,6 +475,10 @@ async function hangup() {
   refreshControls();
 }
 
+document.getElementById("open-debug").addEventListener("click", () => {
+  window.location.href = "/debug";
+});
+
 document.getElementById("pick").addEventListener("click", () => {
   scenarioEl.focus();
   if (typeof scenarioEl.showPicker === "function") {
