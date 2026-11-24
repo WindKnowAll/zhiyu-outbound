@@ -8,17 +8,16 @@
     <link rel="stylesheet" href="/static/style.css?v=v1.8" />
   </head>
   <body>
-    <main class="phone">
+    <main class="phone home">
       <header>
         <p class="eyebrow">2026 智语外呼 · 比赛模拟</p>
         <h1>智语外呼</h1>
-        <p class="lead">京东 POP 商家资质审核比赛模拟客服。不是京东官方服务。对方是合成的脱敏商家，不是消费者。接通前就能选择测试场景。接通后先确认公司和店铺，确认前不说驳回细节。</p>
+        <p class="lead">京东 POP 商家资质审核比赛模拟客服。不是京东官方服务。对方是合成的脱敏商家，不是消费者。接通前选择场景，确认身份前不说驳回细节。</p>
       </header>
 
       <p id="banner" class="banner" hidden></p>
 
-      <div class="desk">
-      <div class="col-controls">
+      <div class="first-screen">
       <section class="scenarios" aria-label="选择测试场景">
         <h2>选择测试场景</h2>
         <label class="scenario-label" for="scenario">资审主表全部驳回类型，通话前就能选</label>
@@ -37,6 +36,29 @@
         <p id="call-token-note" class="scenario-note" hidden>口令不写在网页里。向管理员索取后填在这里再开始。没有口令不会连接模型。</p>
       </section>
 
+      <section class="call" aria-live="polite">
+        <div id="orb" class="orb quiet"></div>
+        <p id="status" class="status">正在检查配置</p>
+        <audio id="remote" autoplay playsinline></audio>
+      </section>
+
+      <section class="incident-keep" id="incident-panel" aria-label="异常情况">
+        <h3>异常情况</h3>
+        <p id="incident-call" class="scenario-note">还没有通话。提交仍会发到服务器，并标明没有工单。</p>
+        <button id="incident-open" type="button">异常情况提交</button>
+        <p id="incident-explain" class="scenario-note">主字段就在下面：具体情况，以及一张可选图片。提交发到这台服务器，并按本次通话编号写进模拟工单。通话结束后仍可填。不含录音。</p>
+        <form id="incident-form">
+          <label>具体情况 <textarea id="incident-what" maxlength="2000" rows="3" placeholder="发生了什么"></textarea></label>
+          <label>图片（可选，小于 5MB） <input id="incident-image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" /></label>
+          <p id="incident-file" class="scenario-note">还没有选择图片。</p>
+          <button id="incident-send" type="submit">提交</button>
+          <p id="incident-result" role="status"></p>
+        </form>
+      </section>
+      </div>
+
+      <div class="desk">
+      <div class="col-controls">
       <section class="audio-setup" aria-label="麦克风与开口检测">
         <h2>麦克风与开口检测</h2>
         <p class="scenario-note" id="secure-note">浏览器回声消除和降噪只作用在本机采集。服务端 Silero 另有三项，改它们才会改变打断。浏览器语音不会送进 CosyVoice。</p>
@@ -50,12 +72,6 @@
       </div>
 
       <div class="col-live">
-      <section class="call" aria-live="polite">
-        <div id="orb" class="orb quiet"></div>
-        <p id="status" class="status">正在检查配置</p>
-        <audio id="remote" autoplay playsinline></audio>
-      </section>
-
       <section class="transcript" aria-label="对话记录">
         <h2>通话记录</h2>
         <ol id="lines"></ol>
@@ -104,19 +120,6 @@
       <section class="eval-keep" aria-label="人工抽查例句">
         <h3>人工抽查例句</h3>
         <ul id="eval-prompts"></ul>
-      </section>
-      <section class="incident-keep" id="incident-panel" aria-label="异常情况">
-        <h3>异常情况</h3>
-        <p id="incident-call" class="scenario-note">还没有通话。提交仍会发到服务器，并标明没有工单。</p>
-        <button id="incident-open" type="button">异常情况提交</button>
-        <form id="incident-form" hidden>
-          <label>具体情况 <textarea id="incident-what" maxlength="2000" rows="6" placeholder="发生了什么"></textarea></label>
-          <label>图片（可选，小于 5MB） <input id="incident-image" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif" /></label>
-          <p id="incident-file" class="scenario-note">还没有选择图片。</p>
-          <p class="scenario-note">提交会发到这台服务器，并尽量写进本次通话的模拟工单。没有工单也会单独保存。不含录音。</p>
-          <button id="incident-send" type="submit">提交</button>
-          <p id="incident-result" role="status"></p>
-        </form>
       </section>
       </div>
       </div>

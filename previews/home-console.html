@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>智语外呼 · 预览 · 深色青绿控制台</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0c1413;
+      color: #d7efe8;
+      font: 13px/1.4 "Sarasa Mono SC", "Noto Sans Mono", ui-monospace, monospace;
+      display: grid;
+      grid-template-columns: 72px 1fr;
+    }
+    nav {
+      border-right: 1px solid #1d3330;
+      padding: 12px 8px;
+      writing-mode: vertical-rl;
+      letter-spacing: 0.18em;
+      color: #8fd9cb;
+    }
+    .stage { display: grid; grid-template-rows: auto 1fr auto; min-height: 100vh; }
+    header, footer { padding: 10px 14px; border-bottom: 1px solid #1d3330; }
+    footer { border-bottom: 0; border-top: 1px solid #1d3330; background: #101c1b; }
+    h1 { margin: 0; font-size: 14px; font-weight: 600; color: #effaf7; }
+    .sub { color: #8fd9cb; margin-top: 4px; }
+    .board {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 10px;
+      padding: 10px;
+    }
+    .panel { border: 1px solid #23423d; background: #12211f; padding: 10px; }
+    button, select, textarea { font: inherit; color: inherit; background: #0c1413; border: 1px solid #2f6f66; }
+    button { padding: 8px 10px; cursor: pointer; color: #04221d; background: #3dbea5; border: 0; }
+    select, textarea { width: 100%; padding: 8px; }
+    .log { min-height: 180px; white-space: pre-wrap; color: #b7ddd4; }
+    .k { color: #3dbea5; }
+    form { display: grid; grid-template-columns: 1fr 180px auto; gap: 8px; align-items: end; }
+    label { display: grid; gap: 4px; color: #8fd9cb; font-size: 12px; }
+    #demo { color: #f0d48a; }
+    @media (max-width: 800px) {
+      body { grid-template-columns: 1fr; }
+      nav { writing-mode: horizontal-tb; letter-spacing: 0; border-right: 0; border-bottom: 1px solid #1d3330; }
+      .board, form { grid-template-columns: 1fr; }
+      .stage { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <nav>智语外呼</nav>
+  <div class="stage">
+    <header>
+      <h1>控制台预览</h1>
+      <div class="sub">竞赛模拟 · 不是京东官方服务 · 深色布局仅供挑选，不是当前首页</div>
+    </header>
+    <div class="board">
+      <section class="panel">
+        <div class="k">SCENE</div>
+        <label>模拟场景
+          <select>
+            <option>模拟 · 假授权 · 第 27 行</option>
+            <option>模拟 · 图形商标</option>
+            <option>模拟 · 空话术</option>
+          </select>
+        </label>
+        <p><button type="button" id="arm">开始通话</button></p>
+        <p class="k">商家是模拟数据</p>
+        <p>甲乙合成商贸有限公司<br />甲乙合成旗舰店</p>
+      </section>
+      <section class="panel">
+        <div class="k">STATUS</div>
+        <div class="log" id="log">待命
+没有麦克风
+没有模型请求
+身份未确认，不显示驳回细节</div>
+      </section>
+    </div>
+    <footer>
+      <form id="sheet">
+        <label>异常情况 · 具体情况
+          <textarea rows="2" placeholder="模拟记录，不会提交"></textarea>
+        </label>
+        <label>可选图片
+          <input type="file" />
+        </label>
+        <button type="submit">提交</button>
+      </form>
+      <p id="demo"></p>
+    </footer>
+  </div>
+  <script>
+    document.getElementById("arm").addEventListener("click", function () {
+      document.getElementById("log").textContent = "静态演示\n没有申请麦克风\n没有接通";
+    });
+    document.getElementById("sheet").addEventListener("submit", function (event) {
+      event.preventDefault();
+      document.getElementById("demo").textContent = "静态演示：没有写工单，没有上传图片。";
+    });
+  </script>
+</body>
+</html>

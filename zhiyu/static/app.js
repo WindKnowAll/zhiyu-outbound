@@ -803,8 +803,10 @@ fetch("/api/collection")
   .catch(() => refreshHistory());
 
 document.getElementById("incident-open").addEventListener("click", () => {
-  document.getElementById("incident-form").hidden = false;
+  const form = document.getElementById("incident-form");
+  form.hidden = false;
   showIncidentCall();
+  document.getElementById("incident-what").focus();
 });
 
 document.getElementById("incident-image").addEventListener("change", () => {

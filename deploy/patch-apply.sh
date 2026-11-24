@@ -16,11 +16,8 @@ case "$ROOT" in
   /etc|/etc/*) echo "拒绝写入 /etc" >&2; exit 1 ;;
 esac
 FILES=(
-  zhiyu/qualification/flow.py
-  zhiyu/server.py
-  zhiyu/static/debug.html
-  zhiyu/static/debug_state.js
-  zhiyu/static/debug.js
+  zhiyu/static/index.html
+  zhiyu/static/app.js
   zhiyu/static/style.css
   deploy/patch-apply.sh
 )
@@ -62,7 +59,7 @@ python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-build.json", encoding="utf-8"))
 assert body.get("page_version") == "v1.8", body.get("page_version")
-assert body.get("build_hash") == "572c17421cf4", body.get("build_hash")
+assert body.get("build_hash") == "b74e8eebdbe1", body.get("build_hash")
 print("page_version=v1.8 build_hash=" + str(body.get("build_hash")))
 PY
 rm -f /tmp/zhiyu-patch-build.json
