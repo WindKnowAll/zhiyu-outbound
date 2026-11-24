@@ -119,6 +119,25 @@ button:disabled {
 
 button.hangup { background: var(--clay); }
 
+a.text-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--pine);
+  color: var(--pine);
+  text-decoration: none;
+  background: transparent;
+}
+
+.debug-page .composer, #composer {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

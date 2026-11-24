@@ -16,14 +16,12 @@ case "$ROOT" in
   /etc|/etc/*) echo "拒绝写入 /etc" >&2; exit 1 ;;
 esac
 FILES=(
-  zhiyu/incidents.py
-  zhiyu/qualification/flow.py
+  zhiyu/text_debug.py
   zhiyu/server.py
-  zhiyu/static/app.js
+  zhiyu/static/debug.html
+  zhiyu/static/debug.js
   zhiyu/static/index.html
   zhiyu/static/style.css
-  deploy/nginx-zhiyu.conf
-  deploy/nginx-zhiyu-tls.conf.example
   deploy/patch-apply.sh
 )
 for rel in "${FILES[@]}"; do
@@ -64,9 +62,8 @@ python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-build.json", encoding="utf-8"))
 assert body.get("page_version") == "v1.8", body.get("page_version")
-assert body.get("build_hash") == "45320b5981aa", body.get("build_hash")
+assert body.get("build_hash") == "559dcea7b621", body.get("build_hash")
 print("page_version=v1.8 build_hash=" + str(body.get("build_hash")))
 PY
 rm -f /tmp/zhiyu-patch-build.json
-echo "补丁已放上。没有改 /etc/zhiyu/zhiyu.env、试听数据和 TLS。"
-echo "图片上传还要在正在使用的 nginx 站点里把 client_max_body_size 改成 6m，然后 nginx -t && systemctl reload nginx。这个脚本不改 /etc/nginx。"
+echo "补丁已放上。没有改 /etc/zhiyu/zhiyu.env、试听数据、nginx 和 TLS。"

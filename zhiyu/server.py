@@ -41,7 +41,9 @@ from zhiyu.config import (
     uses_legacy_dashscope_domain,
 )
 from zhiyu.qualification.catalog import load_catalog
+from zhiyu.providers.base import ProviderError
 from zhiyu.qualification.flow import TicketStore
+from zhiyu.text_debug import TextDebugSession, choose_row
 from zhiyu.qualification.flow import ScenarioRejected, resolve_scenario_id, scenario_choices
 from zhiyu.session import SessionHub
 from zhiyu.teammate.review import (
@@ -64,6 +66,8 @@ PAGE_FILES = (
     "zhiyu/static/call_ui.js",
     "zhiyu/static/review_ui.js",
     "zhiyu/static/style.css",
+    "zhiyu/static/debug.html",
+    "zhiyu/static/debug.js",
 )
 
 
@@ -173,6 +177,7 @@ def create_app(
     collect_token: str | None = None,
     collect_submit_token: str | None = None,
     call_token: str | None = None,
+    text_model=None,
 ) -> FastAPI:
     settings = settings or load_settings()
     persona = load_persona()
@@ -180,6 +185,7 @@ def create_app(
     reviews = ReviewStore(review_dir or (ROOT / "var" / "teammate_reviews"))
     incidents = IncidentStore(incident_dir or (ROOT / "var" / "incidents"))
     tickets = TicketStore(ticket_dir or (ROOT / "var" / "mock_tickets"))
+    text_sessions: dict[str, TextDebugSession] = {}
     collect_on, admin_token, submit_token = collect_config(
         collect_enabled, collect_token, collect_submit_token
     )
@@ -665,6 +671,86 @@ def create_app(
             raise HTTPException(status_code=404, detail="集中收集没有启用。")
         _admin(request)
         return JSONResponse({"reviews": reviews.list_reviews(pseudonym or None)})
+
+    def _text_model():
+        if text_model is not None:
+            return text_model
+        from zhiyu.providers.factory import create_language_model
+
+        return create_language_model(settings)
+
+    @app.get("/debug")
+    async def debug_page() -> HTMLResponse:
+        page = (STATIC_DIR / "debug.html").read_text(encoding="utf-8")
+        return HTMLResponse(
+            page,
+            headers={
+                "Cache-Control": "no-store",
+                "Permissions-Policy": "microphone=(), camera=(), display-capture=()",
+            },
+        )
+
+    @app.post("/api/debug/session")
+    async def debug_start(request: Request) -> JSONResponse:
+        denied = _call_gate(request, "需要通话口令。没有口令不会连接模型。")
+        if denied is not None:
+            return denied
+        if not settings.credentials_ready and text_model is None:
+            return JSONResponse(status_code=503, content=status_payload(settings))
+        payload = await request.json()
+        try:
+            row = choose_row(load_catalog(), payload.get("scenario_id"), bool(payload.get("random")))
+            session = TextDebugSession(load_catalog(), row, tickets)
+            session.model = _text_model()
+        except ProviderError as exc:
+            return JSONResponse(status_code=503, content={"message": str(exc)})
+        except Exception as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        if len(text_sessions) > 40:
+            text_sessions.pop(next(iter(text_sessions)))
+        text_sessions[session.session_id] = session
+        return JSONResponse(
+            {
+                "session_id": session.session_id,
+                "row": session.row,
+                "opening": session.opening(),
+                "audio": False,
+            }
+        )
+
+    @app.post("/api/debug/session/{session_id}/say")
+    async def debug_say(session_id: str, request: Request) -> JSONResponse:
+        denied = _call_gate(request, "需要通话口令。没有口令不会连接模型。")
+        if denied is not None:
+            return denied
+        session = text_sessions.get(session_id)
+        if session is None:
+            return JSONResponse(status_code=404, content={"message": "这场文字调试已经不在。请重新开始。"})
+        payload = await request.json()
+        text = str(payload.get("text") or "").strip()
+        if not text:
+            return JSONResponse(status_code=400, content={"message": "请先打字。"})
+        if len(text) > 2000:
+            return JSONResponse(status_code=400, content={"message": "这句话太长。"})
+        try:
+            result = await session.say(text)
+        except ProviderError as exc:
+            return JSONResponse(status_code=502, content={"message": str(exc)})
+        except Exception as exc:
+            logger.exception("文字调试失败")
+            return JSONResponse(status_code=502, content={"message": "模型没有返回。输入还在，可以再试。"})
+        result["audio"] = False
+        return JSONResponse(result)
+
+    @app.post("/api/debug/session/{session_id}/end")
+    async def debug_end(session_id: str, request: Request) -> JSONResponse:
+        denied = _call_gate(request, "需要通话口令。")
+        if denied is not None:
+            return denied
+        session = text_sessions.pop(session_id, None)
+        if session is None:
+            return JSONResponse(status_code=404, content={"message": "这场文字调试已经不在。"})
+        return JSONResponse(session.finish())
 
     @app.get("/")
     async def index() -> HTMLResponse:
