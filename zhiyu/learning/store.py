@@ -116,6 +116,36 @@ class LearningStore:
         with self._lock():
             return list(self._read()["items"])
 
+    def record_unresolved(self, *, source_row: int, session_id: str, note: str) -> bool:
+        """本地待审跟进。不是已批准话术，也不会外呼派单。"""
+
+        safe = desensitize(note) or "未解疑问"
+        try:
+            with self._lock():
+                data = self._read()
+                now = _now()
+                data["items"].append(
+                    {
+                        "id": uuid.uuid4().hex,
+                        "source_row": int(source_row),
+                        "intent": "unresolved",
+                        "status": "followup",
+                        "enabled": False,
+                        "speak": "",
+                        "note": safe,
+                        "session_id": session_id,
+                        "dedup": "",
+                        "version": 0,
+                        "created_at": now,
+                        "dispatch": "local_only",
+                        "history": [{"at": now, "action": "followup", "speak": ""}],
+                    }
+                )
+                self._write(data)
+            return True
+        except OSError:
+            return False
+
     def _mutate(self, item_id: str, action: str, **fields: object) -> dict:
         with self._lock():
             data = self._read()

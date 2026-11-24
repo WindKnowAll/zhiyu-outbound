@@ -181,6 +181,10 @@ def conversational_override(call: QualificationCall, user_text: str) -> Decision
 
     if asks_to_break_rules(user_text):
         return None
+    if call.stage == "closed":
+        return None
+    if is_not_understood(user_text) and not any(word in user_text for word in ("别打了", "不想听", "不要再打", "再见", "挂了")):
+        return confused_reply(call)
     if any(word in user_text for word in ("再见", "挂了", "不用再说")) and call.identity_confirmed:
         return Decision(speak=GOODBYE, closed=True, result="已知晓")
     if call.identity_confirmed and call.disclosed and is_why_followup(user_text):
@@ -261,6 +265,7 @@ class QualificationCall:
     ticket_written: bool = False
     last_resolution: dict | None = None
     learning: object | None = None
+    unclear_count: int = 0
 
     def opening(self) -> str:
         return (
@@ -564,8 +569,93 @@ def split_reason_action(script: str) -> tuple[str, str]:
     return script, ""
 
 
+def is_not_understood(text: str) -> bool:
+    """否定理解优先。避免「我不明白」里的「明白」被当成听懂了。"""
+
+    raw = text.strip()
+    return any(
+        word in raw
+        for word in (
+            "不明白",
+            "没明白",
+            "听不懂",
+            "没听懂",
+            "还不懂",
+            "还是不懂",
+            "不清楚",
+            "没清楚",
+            "不理解",
+            "没理解",
+            "看不懂",
+            "没看懂",
+        )
+    )
+
+
+def is_positive_ack(text: str) -> bool:
+    if is_not_understood(text):
+        return False
+    raw = text.strip()
+    if "不可以" in raw or "不明" in raw:
+        return False
+    return any(word in raw for word in ("知道了", "好的", "明白了", "我明白", "清楚了", "可以"))
+
+
+def known_reason_clause(call: QualificationCall) -> str:
+    text, complete = filled_script(call.scenario, call.case.brand)
+    spoken = customer_wording(text) if complete else ""
+    reason = call.scenario.reason.strip()
+    short = reason.split("（")[0].strip()
+    if spoken and reason and reason in spoken:
+        return reason
+    if spoken and short and short in spoken:
+        return reason or short
+    return ""
+
+
+def confused_reply(call: QualificationCall) -> Decision:
+    """第一次用已有原因再解释。第二次只记本地待审并结束，不写成已知晓。"""
+
+    if not call.identity_confirmed:
+        return Decision(
+            speak=f"需要先确认您是不是这家公司或这个店铺。确认前不能说具体原因。请问您是{call.case.company}，店铺是{call.case.shop}吗？",
+        )
+    if not call.disclosed:
+        return Decision(speak="具体原因还没有说明。我不能另外编。")
+    call.unclear_count += 1
+    reason = known_reason_clause(call)
+    if call.unclear_count < 2:
+        if reason:
+            return Decision(speak=f"原因是{reason}。您具体哪一句不清楚？")
+        return Decision(speak="这条没有可以引用的具体原因，我不能另外编。您可以说说哪一句没听清。")
+    recorded = _remember_unresolved(call, reason)
+    if recorded:
+        speak = "已记录您的疑问，需由审核同事进一步确认。感谢您的接听，祝您生活愉快，再见！"
+    else:
+        speak = "这次没能把疑问记下来。感谢您的接听，祝您生活愉快，再见！"
+    return Decision(speak=speak, closed=True, result="未解决待审核")
+
+
+def _remember_unresolved(call: QualificationCall, reason: str) -> bool:
+    store = getattr(call, "learning", None)
+    if store is None or not hasattr(store, "record_unresolved"):
+        return False
+    try:
+        return bool(
+            store.record_unresolved(
+                source_row=call.scenario.row,
+                session_id=call.session_id,
+                note=reason or "未解疑问",
+            )
+        )
+    except Exception:
+        return False
+
+
 def classify(text: str) -> str:
     raw = text.strip()
+    if is_not_understood(raw):
+        return "confused"
     if any(word in raw for word in ("投诉", "曝光", "微博", "小红书", "12315", "记者", "媒体")):
         return "complaint"
     if any(word in raw for word in ("打错", "不是这家", "不是这个公司", "不是这个店", "不是本公司")):
@@ -582,7 +672,7 @@ def classify(text: str) -> str:
         return "confirm"
     if any(word in raw for word in ("吗", "怎么", "为什么", "哪里", "什么", "能不能", "是不是", "多少")):
         return "question"
-    if any(word in raw for word in ("知道了", "好的", "明白", "清楚了", "可以")):
+    if is_positive_ack(raw):
         return "ack"
     return "other"
 
