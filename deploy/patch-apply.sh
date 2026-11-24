@@ -1,5 +1,5 @@
 #!/bin/bash
-# 从已部署的 v1.8 构建 572c17421cf4 更新到深色青绿首页。
+# 从已部署的 v1.8 构建 05e64542da37 更新文字调试页的深色青绿布局。
 # 先核对基线，再备份程序，然后覆盖文件。不读取、不修改 /etc/zhiyu/zhiyu.env，
 # 不删除试听数据、工单和 TLS，不改 nginx、证书和 TURN，不安装依赖。
 set -euo pipefail
@@ -24,9 +24,9 @@ MODE=$(python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-before.json", encoding="utf-8"))
 current = str(body.get("build_hash") or "")
-if current == "05e64542da37":
+if current == "ed30f2bf0239":
     print("already")
-elif current == "572c17421cf4":
+elif current == "05e64542da37":
     print("ok")
 else:
     print("refuse")
@@ -34,17 +34,17 @@ PY
 )
 rm -f /tmp/zhiyu-patch-before.json
 if [[ "$MODE" == "already" ]]; then
-  echo "当前已是 05e64542da37，不再覆盖。"
+  echo "当前已是 ed30f2bf0239，不再覆盖。"
   exit 0
 fi
 if [[ "$MODE" != "ok" ]]; then
-  echo "拒绝：这个补丁只从已部署的构建 572c17421cf4 升级。环境、数据和证书没有改。" >&2
+  echo "拒绝：这个补丁只从已部署的构建 05e64542da37 升级。环境、数据和证书没有改。" >&2
   exit 1
 fi
-echo "基线核对通过：572c17421cf4"
+echo "基线核对通过：05e64542da37"
 FILES=(
-  zhiyu/static/index.html
-  zhiyu/static/app.js
+  zhiyu/static/debug.html
+  zhiyu/static/debug.js
   zhiyu/static/style.css
   deploy/patch-apply.sh
 )
@@ -86,7 +86,7 @@ python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-build.json", encoding="utf-8"))
 assert body.get("page_version") == "v1.8", body.get("page_version")
-assert body.get("build_hash") == "05e64542da37", body.get("build_hash")
+assert body.get("build_hash") == "ed30f2bf0239", body.get("build_hash")
 print("page_version=v1.8 build_hash=" + str(body.get("build_hash")))
 PY
 rm -f /tmp/zhiyu-patch-build.json

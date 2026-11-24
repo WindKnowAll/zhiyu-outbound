@@ -57,6 +57,8 @@ def test_debug_page_has_no_voice_api_and_voice_home_keeps_microphone_policy():
         home = client.get("/")
     assert debug.status_code == 200
     assert "microphone=()" in debug.headers["permissions-policy"]
+    assert "camera=()" in debug.headers["permissions-policy"]
+    assert "display-capture=()" in debug.headers["permissions-policy"]
     assert "文字调试" in debug.text
     assert "返回语音首页" in debug.text
     assert "permissions-policy" not in {key.lower() for key in home.headers}
@@ -69,6 +71,9 @@ def test_debug_page_has_no_voice_api_and_voice_home_keeps_microphone_policy():
     assert "a.text-link" not in css
     assert "\n#composer" not in css
     assert ".debug-page #composer" in css
+    assert "body:has(main.debug-page)" in css
+    assert "body:has(main.home)" in css
+    assert 'id="draft" rows="2" maxlength="2000" disabled' in page
 
 
 def test_typed_turn_uses_model_and_never_starts_audio(tmp_path, monkeypatch):

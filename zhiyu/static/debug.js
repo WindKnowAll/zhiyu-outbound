@@ -269,4 +269,5 @@ fetch("/api/collection")
   })
   .catch(() => {});
 
+applyComposer(composer);
 loadScenarios().catch((error) => setBanner(error.message || "场景没有加载。", false));

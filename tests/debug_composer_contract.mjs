@@ -9,6 +9,7 @@ const page = fs.readFileSync(new URL("../zhiyu/static/debug.html", import.meta.u
 const script = fs.readFileSync(new URL("../zhiyu/static/debug.js", import.meta.url), "utf8");
 
 if (!page.includes(">电话已结束<")) throw new Error("ended text missing");
+if (!page.includes('id="draft" rows="2" maxlength="2000" disabled')) throw new Error("draft starts enabled");
 if (!page.includes(">开始文字对话<")) throw new Error("restart button missing");
 if (!page.includes(">异常情况记录<")) throw new Error("incident button missing");
 if (script.includes('getElementById("incident-record").disabled') || script.includes("incident-record\").disabled")) {
