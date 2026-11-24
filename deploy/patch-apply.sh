@@ -1,6 +1,7 @@
 #!/bin/bash
-# 把解压后的补丁覆盖到已安装的 v1.8 程序目录。
-# 不读取、不修改 /etc/zhiyu/zhiyu.env，不删除试听数据、工单和 TLS，不安装依赖。
+# 从已部署的 v1.8 构建 572c17421cf4 更新到深色青绿首页。
+# 先核对基线，再备份程序，然后覆盖文件。不读取、不修改 /etc/zhiyu/zhiyu.env，
+# 不删除试听数据、工单和 TLS，不改 nginx、证书和 TURN，不安装依赖。
 set -euo pipefail
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "请用 root 运行。" >&2
@@ -15,6 +16,32 @@ fi
 case "$ROOT" in
   /etc|/etc/*) echo "拒绝写入 /etc" >&2; exit 1 ;;
 esac
+if ! curl -fsS http://127.0.0.1:7860/api/build > /tmp/zhiyu-patch-before.json; then
+  echo "读不到当前构建。没有改任何文件。" >&2
+  exit 1
+fi
+MODE=$(python3 - << 'PY'
+import json
+body = json.load(open("/tmp/zhiyu-patch-before.json", encoding="utf-8"))
+current = str(body.get("build_hash") or "")
+if current == "05e64542da37":
+    print("already")
+elif current == "572c17421cf4":
+    print("ok")
+else:
+    print("refuse")
+PY
+)
+rm -f /tmp/zhiyu-patch-before.json
+if [[ "$MODE" == "already" ]]; then
+  echo "当前已是 05e64542da37，不再覆盖。"
+  exit 0
+fi
+if [[ "$MODE" != "ok" ]]; then
+  echo "拒绝：这个补丁只从已部署的构建 572c17421cf4 升级。环境、数据和证书没有改。" >&2
+  exit 1
+fi
+echo "基线核对通过：572c17421cf4"
 FILES=(
   zhiyu/static/index.html
   zhiyu/static/app.js
@@ -59,7 +86,7 @@ python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-build.json", encoding="utf-8"))
 assert body.get("page_version") == "v1.8", body.get("page_version")
-assert body.get("build_hash") == "b74e8eebdbe1", body.get("build_hash")
+assert body.get("build_hash") == "05e64542da37", body.get("build_hash")
 print("page_version=v1.8 build_hash=" + str(body.get("build_hash")))
 PY
 rm -f /tmp/zhiyu-patch-build.json
