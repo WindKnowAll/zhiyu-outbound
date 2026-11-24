@@ -217,7 +217,6 @@ footer p { font-size: 13px; }
 .scenarios label[hidden],
 .incident-keep label[hidden],
 #incident-form[hidden],
-#incident-again[hidden],
 #call-token-note[hidden] { display: none; }
 
 .incident-keep {
@@ -229,7 +228,13 @@ footer p { font-size: 13px; }
 }
 
 .incident-keep h3 { margin: 0; font-size: 16px; }
-.incident-keep label { display: grid; gap: 4px; font-size: 14px; }
+.incident-keep label { display: grid; gap: 4px; font-size: 16px; }
+#incident-form { display: grid; gap: 12px; }
+#incident-what { font-size: 16px; line-height: 1.5; }
+#incident-result { margin: 0; padding: 12px; border-radius: 12px; }
+#incident-result:empty { display: none; }
+#incident-result.ok { background: #e5f2ea; color: var(--pine-dark); }
+#incident-result.bad { background: #f8e6df; color: var(--clay); }
 
 textarea, input[type="text"], input:not([type="checkbox"]):not([type="range"]):not([type="file"]) {
   width: 100%;

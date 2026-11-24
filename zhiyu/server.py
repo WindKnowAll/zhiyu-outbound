@@ -31,6 +31,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
 )
 
 from zhiyu.build_id import PAGE_VERSION
+from zhiyu.incidents import IncidentRejected, IncidentStore, clean_session_id, parse_multipart
 from zhiyu.config import (
     Settings,
     legacy_domain_warning,
@@ -40,6 +41,7 @@ from zhiyu.config import (
     uses_legacy_dashscope_domain,
 )
 from zhiyu.qualification.catalog import load_catalog
+from zhiyu.qualification.flow import TicketStore
 from zhiyu.qualification.flow import ScenarioRejected, resolve_scenario_id, scenario_choices
 from zhiyu.session import SessionHub
 from zhiyu.teammate.review import (
@@ -63,6 +65,18 @@ PAGE_FILES = (
     "zhiyu/static/review_ui.js",
     "zhiyu/static/style.css",
 )
+
+
+def _form_fields(content_type: str, body: bytes) -> dict[str, tuple[str, bytes]]:
+    kind = content_type.lower()
+    if "multipart/form-data" in kind:
+        return parse_multipart(content_type, body)
+    if "application/x-www-form-urlencoded" in kind or not content_type:
+        from urllib.parse import parse_qs
+
+        parsed = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+        return {key: ("", values[0].encode("utf-8")) for key, values in parsed.items() if values}
+    raise IncidentRejected("提交格式不正确。")
 
 
 def candidate_kind_counts(lines: list[str]) -> dict[str, int]:
@@ -153,6 +167,8 @@ def create_app(
     *,
     preload_vad: bool = False,
     review_dir: Path | None = None,
+    incident_dir: Path | None = None,
+    ticket_dir: Path | None = None,
     collect_enabled: bool | None = None,
     collect_token: str | None = None,
     collect_submit_token: str | None = None,
@@ -162,6 +178,8 @@ def create_app(
     persona = load_persona()
     hub = SessionHub()
     reviews = ReviewStore(review_dir or (ROOT / "var" / "teammate_reviews"))
+    incidents = IncidentStore(incident_dir or (ROOT / "var" / "incidents"))
+    tickets = TicketStore(ticket_dir or (ROOT / "var" / "mock_tickets"))
     collect_on, admin_token, submit_token = collect_config(
         collect_enabled, collect_token, collect_submit_token
     )
@@ -174,6 +192,7 @@ def create_app(
     local_gate = RateGate(30, 600)
     collect_gate = RateGate(10, 60)
     ice_gate = RateGate(30, 60)
+    incident_gate = RateGate(20, 60)
     turn = TurnConfig(
         secret=settings.turn_secret,
         public_host=settings.turn_public_host,
@@ -365,6 +384,102 @@ def create_app(
                 "turn_enabled": turn.enabled,
             }
         )
+
+    def _call_gate(request: Request, message: str) -> JSONResponse | None:
+        if call_token and request.headers.get("x-zhiyu-call-token", "") != call_token:
+            return JSONResponse(status_code=401, content={"message": message})
+        return None
+
+    def _incident_reader(request: Request) -> JSONResponse | None:
+        if not collect_on:
+            return None
+        if _bearer(request) != admin_token:
+            return JSONResponse(status_code=401, content={"message": "需要管理员令牌。"})
+        return None
+
+    @app.post("/api/incidents")
+    async def incident_save(request: Request) -> JSONResponse:
+        denied = _call_gate(request, "需要通话口令。没有口令不会提交异常。")
+        if denied is not None:
+            return denied
+        who = request.client.host if request.client else "incident"
+        if not incident_gate.allow(who):
+            return JSONResponse(status_code=429, content={"message": "提交太频繁，请稍后再试。"})
+        raw_body = await request.body()
+        if len(raw_body) > 6 * 1024 * 1024:
+            return JSONResponse(status_code=400, content={"message": "请求超过 6MB。"})
+        try:
+            fields = _form_fields(request.headers.get("content-type", ""), raw_body)
+        except IncidentRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        text = fields.get("text", ("", b""))[1].decode("utf-8", errors="replace")
+        call_session_id = fields.get("call_session_id", ("", b""))[1].decode("utf-8", errors="replace")
+        image = fields.get("image", ("", b""))[1]
+        if _pasted_secret({"text": text, "call_session_id": call_session_id}):
+            return JSONResponse(status_code=400, content={"message": "内容里不能带密钥或口令。"})
+        try:
+            session_id = clean_session_id(call_session_id)
+        except IncidentRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        raw = image
+        try:
+            saved = incidents.save(
+                text=text,
+                session_id=session_id,
+                image=raw or None,
+                ticket_names=[],
+            )
+            names = tickets.attach_incident(session_id, saved["text"], saved["image"])
+            if names:
+                saved = incidents.mark_attached(saved["id"], names)
+        except IncidentRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        return JSONResponse(
+            {
+                "ok": True,
+                "id": saved["id"],
+                "call_session_id": saved["call_session_id"],
+                "ticket_attached": saved["ticket_attached"],
+                "image": saved["image"],
+                "message": "提交成功",
+            }
+        )
+
+    @app.get("/api/incidents/export")
+    async def incident_export(request: Request) -> JSONResponse:
+        denied = _incident_reader(request)
+        if denied is not None:
+            return denied
+        return JSONResponse(
+            {"incidents": incidents.list_records(), "raw_audio": False},
+            headers={"Content-Disposition": 'attachment; filename="zhiyu-incident-notes.json"'},
+        )
+
+    @app.get("/api/incidents")
+    async def incident_list(request: Request) -> JSONResponse:
+        denied = _incident_reader(request)
+        if denied is not None:
+            return denied
+        return JSONResponse({"incidents": incidents.list_records(), "raw_audio": False})
+
+    @app.get("/api/incidents/{incident_id}/image")
+    async def incident_image(incident_id: str, request: Request):
+        denied = _incident_reader(request)
+        if denied is not None:
+            return denied
+        try:
+            found = incidents.get(incident_id)
+        except IncidentRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        if found is None or not found.get("image"):
+            raise HTTPException(status_code=404, detail="没有这张图片。")
+        try:
+            path = incidents.image_file(str(found["image"]))
+        except IncidentRejected as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="没有这张图片。")
+        return FileResponse(path, filename=path.name)
 
     @app.get("/api/voices")
     async def voices() -> dict:

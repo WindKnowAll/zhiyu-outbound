@@ -601,11 +601,11 @@ function showIncidentCall() {
   if (!note || typeof ZhiyuReview === "undefined") return;
   const binding = ZhiyuReview.incidentBinding(pcId, boundCall && boundCall.id);
   if (binding.callLink === "current") {
-    note.textContent = "将关联正在进行的这通。下一通接通后不会再写到这一通。";
+    note.textContent = "将写入正在进行的这通工单。编号会一起保存。";
   } else if (binding.callLink === "recent") {
-    note.textContent = "将关联刚才这通。刷新后页面不再留着句子，提交仍带这通编号。下一通接通后会改绑。";
+    note.textContent = "将写入刚才这通工单。没有工单时也会单独留在服务器上。";
   } else {
-    note.textContent = "还没有通话。提交会标明「无通话」，不会编造一通电话。";
+    note.textContent = "还没有通话。提交仍会发到服务器，并标明没有工单。";
   }
 }
 
@@ -788,11 +788,7 @@ fetch("/api/collection")
     if (!collectEnabled) {
       document.getElementById("hosting-note").textContent += " 集中收集接口当前关闭。";
     } else {
-      const tokenLabel = document.getElementById("submit-token-label");
-      tokenLabel.hidden = false;
-      if (!document.getElementById("incident-form").hidden) {
-        document.getElementById("incident-form").insertBefore(tokenLabel, document.getElementById("incident-send"));
-      }
+      document.getElementById("submit-token-label").hidden = false;
     }
     if (callGate) {
       document.getElementById("call-token-label").hidden = false;
@@ -803,87 +799,78 @@ fetch("/api/collection")
   .catch(() => refreshHistory());
 
 document.getElementById("incident-open").addEventListener("click", () => {
-  const form = document.getElementById("incident-form");
-  form.hidden = false;
-  if (collectEnabled) {
-    const tokenLabel = document.getElementById("submit-token-label");
-    tokenLabel.hidden = false;
-    form.insertBefore(tokenLabel, document.getElementById("incident-send"));
-  }
+  document.getElementById("incident-form").hidden = false;
   showIncidentCall();
 });
 
-document.getElementById("incident-again").addEventListener("click", () => {
-  sendIncident(true);
+document.getElementById("incident-image").addEventListener("change", () => {
+  const file = document.getElementById("incident-image").files[0];
+  const note = document.getElementById("incident-file");
+  if (!file) {
+    note.textContent = "还没有选择图片。";
+    return;
+  }
+  note.textContent = file.name + "，" + Math.ceil(file.size / 1024) + " KB";
 });
 
-document.getElementById("incident-send").addEventListener("click", () => {
-  sendIncident(false);
+document.getElementById("incident-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  sendIncident();
 });
 
-async function sendIncident(renew) {
+function showIncidentResult(ok, text) {
   const result = document.getElementById("incident-result");
+  result.className = ok ? "ok" : "bad";
+  result.textContent = text;
+}
+
+async function sendIncident() {
+  const result = document.getElementById("incident-result");
+  const button = document.getElementById("incident-send");
   if (starting) {
-    result.textContent = "正在接通下一通。等这通有了编号再提交，避免写到上一通。";
+    showIncidentResult(false, "提交失败：正在接通下一通。等这通有了编号再提交，已填内容还在。");
+    return;
+  }
+  const what = document.getElementById("incident-what").value.trim();
+  if (!what) {
+    showIncidentResult(false, "提交失败：请先写一段具体情况。已填内容还在。");
+    return;
+  }
+  if (callGate && !document.getElementById("call-token").value.trim()) {
+    showIncidentResult(false, "提交失败：需要通话口令。口令不写在网页里。已填内容还在。");
     return;
   }
   const binding = ZhiyuReview.incidentBinding(pcId, boundCall && boundCall.id);
-  const what = document.getElementById("incident-what").value.trim();
-  const how = document.getElementById("incident-how").value.trim();
-  if (!what && !how) {
-    result.textContent = "请先写发生了什么，或建议怎样改。";
-    return;
-  }
-  if (!document.getElementById("incident-consent").checked) {
-    result.textContent = "需要勾选同意才保存。不会自动修改系统。";
-    return;
-  }
-  const name = document.getElementById("incident-pseudonym").value.trim();
-  if (!name) {
-    result.textContent = "请填一个短代号。不要写手机号。";
-    return;
-  }
-  const payload = reviewPayload();
-  payload.consent = true;
-  payload.pseudonym = name;
-  payload.session_id = binding.sessionId;
-  payload.call_link = binding.callLink;
-  payload.idempotency_key = currentIncidentKey(binding, renew);
-  payload.feedback.incident = what;
-  payload.feedback.suggestion = how;
+  const body = new FormData();
+  body.set("text", what);
+  body.set("call_session_id", binding.sessionId || "");
+  const file = document.getElementById("incident-image").files[0];
+  if (file) body.set("image", file, file.name);
+  button.disabled = true;
   let response;
-  if (collectEnabled) {
-    const token = document.getElementById("submit-token").value.trim();
-    if (!token) {
-      result.textContent = "集中收集已开启。请填写管理员单独给你的提交令牌。令牌不要写进网页。";
-      return;
-    }
-    response = await fetch("/api/collect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-      body: JSON.stringify(payload),
-    });
-  } else {
-    response = await fetch("/api/reviews", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  }
-  let body = {};
   try {
-    body = await response.json();
+    const headers = {};
+    const callToken = document.getElementById("call-token").value.trim();
+    if (callToken) headers["X-Zhiyu-Call-Token"] = callToken;
+    response = await fetch("/api/incidents", { method: "POST", headers: headers, body: body });
   } catch (error) {
-    body = {};
-  }
-  if (!response.ok) {
-    result.textContent = body.message || "没有保存。";
+    button.disabled = false;
+    showIncidentResult(false, "提交失败：没有连上服务器。已填内容还在，可以再试。");
     return;
   }
-  const linkText = binding.callLink === "current" ? "正在进行的这通" : binding.callLink === "recent" ? "刚才这通" : "无通话";
-  const again = body.duplicate ? "这一条已经在服务器上，没有另写一条。" : "已保存。";
-  result.textContent = again + "关联：" + linkText + "。只给管理员人工查看，不会自动改系统，也不会发到别的平台。";
-  document.getElementById("incident-again").hidden = false;
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = {};
+  }
+  button.disabled = false;
+  if (!response.ok || !payload.ok) {
+    showIncidentResult(false, "提交失败：" + (payload.message || "服务器没有保存。") + "已填内容还在，可以再试。");
+    return;
+  }
+  const where = payload.ticket_attached ? "已写进本次模拟工单。" : "这次没有工单，已单独保存在服务器上。";
+  showIncidentResult(true, "提交成功。" + where);
 }
 
 loadBoundCall();

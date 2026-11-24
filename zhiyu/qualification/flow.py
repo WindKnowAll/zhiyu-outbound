@@ -596,6 +596,30 @@ class TicketStore:
             kept["kept_in_memory"] = True
             return kept
 
+    def attach_incident(self, session_id: str, text: str, image: str) -> list[str]:
+        """把异常文字和图片路径写进同一通的模拟工单。没有工单时返回空列表。"""
+
+        if not session_id or not self.directory.is_dir():
+            return []
+        root = self.directory.resolve()
+        matched: list[str] = []
+        for path in sorted(self.directory.glob("*.json")):
+            if path.parent.resolve() != root:
+                continue
+            try:
+                item = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(item, dict) or item.get("call_session_id") != session_id:
+                continue
+            item["incident_text"] = text
+            item["incident_image"] = image
+            temporary = path.with_suffix(".json.tmp")
+            temporary.write_text(json.dumps(item, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(path)
+            matched.append(path.name)
+        return matched
+
 
 def case_for_row(row: int) -> DemoCase:
     base = default_case()

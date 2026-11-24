@@ -4,7 +4,7 @@
 server {
     listen 443 ssl;
     server_name _;
-    client_max_body_size 1m;
+    client_max_body_size 6m;
     ssl_certificate /etc/zhiyu/tls/fullchain.pem;
     ssl_certificate_key /etc/zhiyu/tls/privkey.pem;
 
