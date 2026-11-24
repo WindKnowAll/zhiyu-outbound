@@ -124,6 +124,14 @@ def conversational_override(call: QualificationCall, user_text: str) -> Decision
 
     if asks_to_break_rules(user_text):
         return None
+    if (
+        call.identity_confirmed
+        and call.disclosed
+        and call.script_text
+        and any(word in user_text for word in ("有什么事", "什么事情", "找我什么"))
+        and "没什么" not in user_text
+    ):
+        return Decision(speak=call.script_text)
     why = bool(call.identity_confirmed and asks_rejection_reason(user_text))
     hand = asks_handoff(user_text)
     if not why and not hand:
@@ -312,6 +320,8 @@ class QualificationCall:
                 result="结果确认",
             )
         if kind == "question":
+            if self.script_text and any(word in user_text for word in ("有什么事", "什么事情", "什么事")):
+                return Decision(speak=self.script_text)
             return self._answer(user_text)
         if kind == "callback":
             return Decision(
@@ -426,11 +436,57 @@ def scenario_of(catalog: Catalog, row: int) -> Scenario:
     return scenario_at(catalog, row)
 
 
+_ANON_PAIR = re.compile(r"与【X+】(?:-【X+】)?")
+_ANON_SLOT = re.compile(r"【X+】|【X+公司】")
+
+
+def _clauses_outside_slots(text: str) -> list[str]:
+    """括号里的逗号不当成句号。避免把【……护照】从中间切开。"""
+
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch == "【":
+            depth += 1
+        elif ch == "】" and depth:
+            depth -= 1
+        if depth == 0 and ch in "，。！？；":
+            buf.append(ch)
+            parts.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    if buf:
+        parts.append("".join(buf))
+    return parts
+
+
 def filled_script(scenario: Scenario, brand: str) -> tuple[str, bool]:
-    if not scenario.script_complete:
+    """只填已知的合成品牌。无名的【XXX】删掉，不补人名，也不把括号里的例子当成这通电话的事实。
+
+    还含未知事实的分句整句不用。原表已经写明、且不再依赖空位的驳回和指引留下。
+    话术单元格为空时仍然不能编。
+    """
+
+    raw = scenario.script.strip()
+    if not raw:
         return "", False
-    text = scenario.script.replace("【】", brand, 1)
-    if "【】" in text or "【XX" in text:
+    text = raw.replace("【】品牌", f"{brand}品牌")
+    text = _ANON_PAIR.sub("", text)
+    text = _ANON_SLOT.sub("", text)
+    if "【" in text:
+        kept = [clause for clause in _clauses_outside_slots(text) if clause and "【" not in clause]
+        text = "".join(kept).strip()
+        text = re.sub(r"^，+", "", text)
+        if scenario.reason and scenario.reason not in text:
+            needle = f"{brand}品牌"
+            if needle in text:
+                text = text.replace(needle, f"{needle}，{scenario.reason}", 1)
+            else:
+                text = f"您申请的{brand}品牌，{scenario.reason}。" + text
+    text = re.sub(r"，{2,}", "，", text).strip("， ")
+    if "【" in text or "】" in text or len(text) < 8:
         return "", False
     return text, True
 

@@ -7,11 +7,23 @@ const sendEl = document.getElementById("send");
 const beginEl = document.getElementById("begin");
 const endEl = document.getElementById("end");
 const randomEl = document.getElementById("random");
+const endedEl = document.getElementById("ended-note");
+const guideEl = document.getElementById("ended-guide");
 
 let sessionId = "";
 let linkedSession = "";
 let callGate = false;
-let sending = false;
+let composer = ZhiyuDebug.initial();
+
+function applyComposer(next) {
+  composer = next;
+  draftEl.disabled = !composer.enabled;
+  sendEl.disabled = !composer.enabled;
+  const ended = composer.note === "电话已结束";
+  endedEl.hidden = !ended;
+  guideEl.hidden = !ended;
+  if (ended) waitEl.textContent = "";
+}
 
 function setBanner(text, ok) {
   if (!text) {
@@ -72,12 +84,12 @@ randomEl.addEventListener("click", () => startSession(true));
 endEl.addEventListener("click", finishSession);
 
 async function startSession(randomPick) {
-  if (sending) return;
+  if (composer.sending) return;
   if (callGate && !document.getElementById("call-token").value.trim()) {
     setBanner("需要通话口令。口令不写在网页里。没有口令不会连接模型。", false);
     return;
   }
-  sending = true;
+  applyComposer(Object.assign({}, composer, { sending: true }));
   waitEl.textContent = "正在准备文字对话。";
   const payload = randomPick
     ? { random: true }
@@ -90,24 +102,24 @@ async function startSession(randomPick) {
       body: JSON.stringify(payload),
     });
   } catch (error) {
-    sending = false;
+    applyComposer(Object.assign({}, composer, { sending: false }));
     waitEl.textContent = "";
     setBanner("没有连上服务器。可以再试。", false);
     return;
   }
   const body = await readJson(response);
-  sending = false;
-  waitEl.textContent = "";
   if (!response.ok) {
+    applyComposer(Object.assign({}, composer, { sending: false }));
+    waitEl.textContent = "";
     setBanner(body.message || "文字对话没有开始。", false);
     return;
   }
+  applyComposer(ZhiyuDebug.reduce(composer, { type: "start-ok" }));
   sessionId = body.session_id;
   linkedSession = body.session_id;
   scenarioEl.value = String(body.row);
   linesEl.replaceChildren();
   addLine("assistant", body.opening || "");
-  sendEl.disabled = false;
   endEl.disabled = false;
   draftEl.focus();
   setBanner("文字对话已开始。这一页没有声音。", true);
@@ -115,55 +127,74 @@ async function startSession(randomPick) {
 
 async function sendDraft() {
   const text = draftEl.value.trim();
-  if (!sessionId || sending) return;
+  const proposed = ZhiyuDebug.reduce(composer, { type: "send" });
+  if (proposed.ignored || !sessionId) return;
   if (!text) {
     waitEl.textContent = "请先打字。";
     return;
   }
-  sending = true;
-  sendEl.disabled = true;
+  const epochAtSend = composer.epoch;
+  const sentSession = sessionId;
+  applyComposer(proposed);
   waitEl.textContent = "正在等模型。这一页不采集声音。";
   let response;
   try {
-    response = await fetch("/api/debug/session/" + encodeURIComponent(sessionId) + "/say", {
+    response = await fetch("/api/debug/session/" + encodeURIComponent(sentSession) + "/say", {
       method: "POST",
       headers: headers(),
       body: JSON.stringify({ text: text }),
     });
   } catch (error) {
-    sending = false;
-    sendEl.disabled = false;
-    waitEl.textContent = "发送失败：没有连上服务器。输入还在，可以再试。";
+    applyComposer(ZhiyuDebug.reduce(composer, { type: "fail", epoch: epochAtSend }));
+    if (composer.enabled) waitEl.textContent = "发送失败：没有连上服务器。输入还在，可以再试。";
     return;
   }
   const body = await readJson(response);
-  sending = false;
-  sendEl.disabled = false;
   if (!response.ok) {
-    waitEl.textContent = "发送失败：" + (body.message || "模型没有返回。") + "输入还在，可以再试。";
+    applyComposer(ZhiyuDebug.reduce(composer, { type: "fail", epoch: epochAtSend }));
+    if (composer.enabled) {
+      waitEl.textContent = "发送失败：" + (body.message || "模型没有返回。") + "输入还在，可以再试。";
+    }
     return;
   }
+  const closed = body.stage === "closed";
+  applyComposer(ZhiyuDebug.reduce(composer, { type: "ok", epoch: epochAtSend, closed: closed }));
+  if (composer.epoch !== epochAtSend || sessionId !== sentSession) return;
   addLine("user", text);
   addLine("assistant", body.speak || "");
   draftEl.value = "";
-  waitEl.textContent = body.ticket_written ? "这通文字已经写了模拟工单。" : "";
+  if (!composer.ended) waitEl.textContent = body.ticket_written ? "这通文字已经写了模拟工单。" : "";
+  if (composer.ended) endEl.disabled = true;
 }
 
 async function finishSession() {
-  if (!sessionId) return;
-  const response = await fetch("/api/debug/session/" + encodeURIComponent(sessionId) + "/end", {
-    method: "POST",
-    headers: headers(),
-    body: "{}",
-  });
+  if (!sessionId || composer.ended) return;
+  const endingId = sessionId;
+  applyComposer(ZhiyuDebug.reduce(composer, { type: "end" }));
+  sessionId = "";
+  endEl.disabled = true;
+  let response;
+  try {
+    response = await fetch("/api/debug/session/" + encodeURIComponent(endingId) + "/end", {
+      method: "POST",
+      headers: headers(),
+      body: "{}",
+    });
+  } catch (error) {
+    sessionId = endingId;
+    applyComposer(ZhiyuDebug.reduce(composer, { type: "end-fail", epoch: composer.epoch, wasEnded: false }));
+    endEl.disabled = false;
+    setBanner("没有连上服务器。可以再试结束。", false);
+    return;
+  }
   const body = await readJson(response);
   if (!response.ok) {
+    sessionId = endingId;
+    applyComposer(ZhiyuDebug.reduce(composer, { type: "end-fail", epoch: composer.epoch, wasEnded: false }));
+    endEl.disabled = false;
     setBanner(body.message || "工单没有写上。", false);
     return;
   }
-  sendEl.disabled = true;
-  endEl.disabled = true;
-  sessionId = "";
   setBanner(body.ticket_written ? "模拟工单已写。异常记录会使用这次的编号。" : "这通文字已结束。", true);
 }
 

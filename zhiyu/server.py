@@ -67,6 +67,7 @@ PAGE_FILES = (
     "zhiyu/static/review_ui.js",
     "zhiyu/static/style.css",
     "zhiyu/static/debug.html",
+    "zhiyu/static/debug_state.js",
     "zhiyu/static/debug.js",
 )
 

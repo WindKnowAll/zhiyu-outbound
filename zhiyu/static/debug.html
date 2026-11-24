@@ -36,6 +36,8 @@
       <form id="composer">
         <label>输入 <textarea id="draft" rows="3" maxlength="2000" placeholder="打字发送。失败后文字还在，可以再试。"></textarea></label>
         <button id="send" type="submit" disabled>发送</button>
+        <p id="ended-note" hidden>电话已结束</p>
+        <p id="ended-guide" class="scenario-note" hidden>要继续，请点开始文字对话。</p>
         <p id="wait" class="scenario-note" role="status"></p>
       </form>
       <form id="debug-incident" hidden>
@@ -48,6 +50,7 @@
         <p id="incident-result" role="status"></p>
       </form>
     </main>
+    <script src="/static/debug_state.js?v=v1.8"></script>
     <script src="/static/debug.js?v=v1.8"></script>
   </body>
 </html>

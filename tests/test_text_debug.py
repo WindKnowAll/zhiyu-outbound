@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -134,3 +136,16 @@ def test_typed_turn_uses_model_and_never_starts_audio(tmp_path, monkeypatch):
         assert noted.json()["image"] in stored
         assert ".." not in noted.json()["image"]
     assert choose_row(load_catalog(), 36, False) == 36
+
+
+def test_debug_composer_locks_input_when_the_call_ends():
+    page = (ROOT / "zhiyu/static/debug.html").read_text(encoding="utf-8")
+    script = (ROOT / "zhiyu/static/debug.js").read_text(encoding="utf-8")
+    assert ">电话已结束<" in page
+    assert ">开始文字对话<" in page
+    assert 'id="incident-record"' in page
+    assert "incident-record" not in script or ".disabled" not in script.split("incident-record")[1][:80]
+    node = shutil.which("node")
+    if node is None:
+        return
+    subprocess.check_call([node, "tests/debug_composer_contract.mjs"], cwd=ROOT)

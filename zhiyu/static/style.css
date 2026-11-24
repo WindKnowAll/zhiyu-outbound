@@ -139,6 +139,17 @@ button.hangup { background: var(--clay); }
   margin-top: 16px;
 }
 
+.debug-page #draft:disabled {
+  background: #efe8df;
+  color: #5c5348;
+}
+.debug-page #ended-note {
+  margin: 0;
+  font-weight: 700;
+  color: var(--clay);
+}
+.debug-page #ended-note[hidden],
+.debug-page #ended-guide[hidden],
 .debug-page #debug-incident[hidden] { display: none; }
 .debug-page #debug-incident textarea { font-size: 16px; line-height: 1.5; }
 .debug-page #incident-result { margin: 0; padding: 12px; border-radius: 12px; }

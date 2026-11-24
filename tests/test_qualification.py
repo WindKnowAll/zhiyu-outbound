@@ -134,7 +134,68 @@ def test_empty_script_and_unfilled_blanks_are_not_invented():
     text, complete = filled_script(scenario_of(catalog, 28), "甲乙合成")
     assert text == "" and complete is False
     partial, ok = filled_script(scenario_of(catalog, 13), "甲乙合成")
-    assert partial == "" and ok is False
+    assert ok is True
+    assert "【" not in partial and "】" not in partial
+    assert "商标状态不符合要求" in partial
+    assert "需您提供" not in partial
+    assert "状态为" not in partial
+
+
+@pytest.mark.parametrize("utterance", ["对的是我", "对的，我是", "是的", "是我"])
+@pytest.mark.asyncio
+async def test_colloquial_yes_states_written_fake_authorization_reason(tmp_path, utterance):
+    """模型回复写成稍后审核。状态机仍只说原表已写的驳回和指引，不收线。"""
+
+    catalog = load_catalog()
+    call = new_call(case_for_row(27), catalog)
+    hooks = QualificationHooks(call=call, store=TicketStore(tmp_path))
+    hooks.note_greeted()
+    decision, source = resolve_turn(
+        call,
+        utterance,
+        '{"intent":"unclear","reply":"这个情况我帮您记录下来，稍后由审核同事和您进一步确认。"}',
+    )
+    assert source == "fallback"
+    assert call.last_resolution["intent"] == "confirm"
+    assert "strong_confirm" in call.last_resolution["fallback_reason"]
+    assert "授权未申请通过" in decision.speak
+    assert "请您与品牌方确认无误后再重新提交" in decision.speak
+    assert "稍后由审核同事" not in decision.speak
+    assert "【" not in decision.speak
+    assert "XXX" not in decision.speak
+    assert decision.closed is False
+    await hooks.after_turn(TurnRecord(utterance, decision.speak, False, StageTimings(), []))
+    assert call.stage == "result"
+    assert call.identity_confirmed is True
+    follow, _ = resolve_turn(call, "请问有什么事", '{"intent":"unclear","reply":"这通电话已经结束。"}')
+    assert "已经结束" not in follow.speak
+    assert "授权未申请通过" in follow.speak
+    assert follow.closed is False
+
+
+@pytest.mark.asyncio
+async def test_denial_and_real_refusal_still_do_not_disclose_or_invent(tmp_path):
+    catalog = load_catalog()
+    denied = new_call(case_for_row(27), catalog)
+    denial, _ = resolve_turn(denied, "我不是这家", '{"intent":"confirm","reply":"授权未申请通过"}')
+    assert "授权未申请通过" not in denial.speak
+    assert denial.closed is True
+    refused = new_call(case_for_row(27), catalog)
+    refusal, source = resolve_turn(refused, "别打了", '{"intent":"refuse","reply":"授权未申请通过，请重新提交"}')
+    assert source == "model"
+    assert "授权未申请通过" not in refusal.speak
+    assert refusal.closed is True
+    assert refusal.result == "拒绝"
+    empty = new_call(case_for_row(28), catalog)
+    fallback, _ = resolve_turn(empty, "对的是我", '{"intent":"confirm","reply":"随便编一条通过政策"}')
+    assert fallback.speak == SAFE_FALLBACK
+    assert fallback.closed is True
+    assert fallback.result == "缺话术转人工"
+    example = new_call(case_for_row(49), catalog)
+    spoken, _ = resolve_turn(example, "对的是我", '{"intent":"confirm","reply":"您上传的是护照"}')
+    assert "护照" not in spoken.speak
+    assert "身份证" not in spoken.speak
+    assert "法人证件类型" in spoken.speak
 
 
 def test_close_principle_uses_the_summary_sheet():
