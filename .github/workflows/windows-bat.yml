@@ -1,0 +1,22 @@
+name: windows-bat-bytes
+
+on:
+  pull_request:
+  push:
+    paths:
+      - "**/*.bat"
+      - ".gitattributes"
+      - "tests/test_windows_bat.py"
+      - "scripts/package_test_bundle.py"
+      - ".github/workflows/windows-bat.yml"
+
+jobs:
+  crlf:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check bat CRLF bytes
+        run: python -m pytest tests/test_windows_bat.py -q

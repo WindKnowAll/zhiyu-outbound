@@ -1,0 +1,21 @@
+[Unit]
+Description=智语外呼 v1.8
+After=network.target
+
+[Service]
+Type=simple
+User=zhiyu
+Group=zhiyu
+WorkingDirectory=/opt/zhiyu/current
+EnvironmentFile=/etc/zhiyu/zhiyu.env
+ExecStart=/opt/zhiyu/venv/bin/python -m zhiyu.server
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/zhiyu /opt/zhiyu/current/var /opt/zhiyu/releases/v1.8/var
+
+[Install]
+WantedBy=multi-user.target
