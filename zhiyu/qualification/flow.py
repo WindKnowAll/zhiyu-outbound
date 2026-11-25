@@ -187,6 +187,18 @@ def conversational_override(call: QualificationCall, user_text: str) -> Decision
         return confused_reply(call)
     if any(word in user_text for word in ("再见", "挂了", "不用再说")) and call.identity_confirmed:
         return Decision(speak=GOODBYE, closed=True, result="已知晓")
+    if (
+        call.identity_confirmed
+        and call.disclosed
+        and is_satisfied_close(user_text)
+        and (call.stage == "ending" or _explicit_understanding(user_text))
+    ):
+        return Decision(speak=GOODBYE, closed=True, result="已知晓")
+    if call.identity_confirmed and call.disclosed and is_open_reservation(user_text):
+        if is_why_followup(user_text):
+            call._why_text = user_text
+            return why_reply(call)
+        return Decision(speak="您具体哪一句不清楚？")
     if call.identity_confirmed and call.disclosed and is_why_followup(user_text):
         call._why_text = user_text
         return why_reply(call)
@@ -592,12 +604,109 @@ def is_not_understood(text: str) -> bool:
     )
 
 
+_RESERVATION_WORDS = (
+    "但是",
+    "不过",
+    "可是",
+    "然而",
+    "为什么",
+    "为何",
+    "还有",
+    "问题",
+    "什么",
+    "哪里",
+    "怎么",
+    "哪个",
+    "吗",
+)
+_UNDERSTAND_WORDS = (
+    "没有问题了",
+    "没问题了",
+    "我明白了",
+    "明白了",
+    "我清楚了",
+    "清楚了",
+    "知道了",
+    "没有了",
+    "可以了",
+    "行了",
+    "好的",
+)
+_EXPLICIT_UNDERSTANDING = (
+    "没有问题了",
+    "没问题了",
+    "我明白了",
+    "明白了",
+    "我清楚了",
+    "清楚了",
+    "知道了",
+    "没有了",
+    "可以了",
+    "行了",
+)
+_NOISE_GAP = re.compile(r"[\s，。！？、,.!~～…·]+")
+
+
+def _compact_utterance(text: str) -> str:
+    return _NOISE_GAP.sub("", text.strip())
+
+
+def _strip_understanding(compact: str) -> str | None:
+    """从句首剥掉听懂用语。剥不动时返回 None。"""
+
+    leftover = compact
+    stripped = False
+    changed = True
+    while changed and leftover:
+        changed = False
+        for phrase in _UNDERSTAND_WORDS:
+            if leftover.startswith(phrase):
+                leftover = leftover[len(phrase) :]
+                stripped = True
+                changed = True
+                break
+    if not stripped:
+        return None
+    return leftover
+
+
+def is_open_reservation(text: str) -> bool:
+    """听懂了但还留着问题。不能当成这通电话可以结束。"""
+
+    compact = _compact_utterance(text)
+    if not compact or is_not_understood(compact):
+        return False
+    leftover = _strip_understanding(compact)
+    if leftover is None:
+        return False
+    return any(word in leftover for word in _RESERVATION_WORDS)
+
+
+def is_satisfied_close(text: str) -> bool:
+    """已经表示听懂。句末一两个杂字不当成新问题。"""
+
+    compact = _compact_utterance(text)
+    if not compact or is_not_understood(compact):
+        return False
+    leftover = _strip_understanding(compact)
+    if leftover is None or any(word in leftover for word in _RESERVATION_WORDS):
+        return False
+    return len(leftover) <= 2
+
+
+def _explicit_understanding(text: str) -> bool:
+    compact = _compact_utterance(text)
+    return any(word in compact for word in _EXPLICIT_UNDERSTANDING)
+
+
 def is_positive_ack(text: str) -> bool:
-    if is_not_understood(text):
+    if is_not_understood(text) or is_open_reservation(text):
         return False
     raw = text.strip()
     if "不可以" in raw or "不明" in raw:
         return False
+    if is_satisfied_close(raw):
+        return True
     return any(word in raw for word in ("知道了", "好的", "明白了", "我明白", "清楚了", "可以"))
 
 

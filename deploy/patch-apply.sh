@@ -1,5 +1,5 @@
 #!/bin/bash
-# 从已部署的 v1.8 构建 11ea1fade515 增加话术进化只读页。
+# 从已部署的 v1.8 构建 e09d72caaf10 修正听懂后的收尾。
 # 先核对基线，再备份程序，然后覆盖文件。不读取、不修改 /etc/zhiyu/zhiyu.env，
 # 不删除试听数据、工单和 TLS，不改 nginx、证书和 TURN，不安装依赖。
 set -euo pipefail
@@ -24,9 +24,9 @@ MODE=$(python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-before.json", encoding="utf-8"))
 current = str(body.get("build_hash") or "")
-if current == "e09d72caaf10":
+if current == "c2d0b08b22c2":
     print("already")
-elif current == "11ea1fade515":
+elif current == "e09d72caaf10":
     print("ok")
 else:
     print("refuse")
@@ -34,26 +34,17 @@ PY
 )
 rm -f /tmp/zhiyu-patch-before.json
 if [[ "$MODE" == "already" ]]; then
-  echo "当前已是 e09d72caaf10，不再覆盖。"
+  echo "当前已是 c2d0b08b22c2，不再覆盖。"
   exit 0
 fi
 if [[ "$MODE" != "ok" ]]; then
-  echo "拒绝：这个补丁只从已部署的构建 11ea1fade515 升级。环境、数据和证书没有改。" >&2
+  echo "拒绝：这个补丁只从已部署的构建 e09d72caaf10 升级。环境、数据和证书没有改。" >&2
   exit 1
 fi
-echo "基线核对通过：11ea1fade515"
+echo "基线核对通过：e09d72caaf10"
 FILES=(
-  zhiyu/server.py
-  zhiyu/rsi_view.py
-  zhiyu/teammate/review.py
-  zhiyu/static/index.html
-  zhiyu/static/app.js
+  zhiyu/qualification/flow.py
   zhiyu/static/debug.html
-  zhiyu/static/debug.js
-  zhiyu/static/style.css
-  zhiyu/static/rsi.html
-  zhiyu/static/rsi.js
-  docs/learning.md
   deploy/patch-apply.sh
 )
 for rel in "${FILES[@]}"; do
@@ -94,7 +85,7 @@ python3 - << 'PY'
 import json
 body = json.load(open("/tmp/zhiyu-patch-build.json", encoding="utf-8"))
 assert body.get("page_version") == "v1.8", body.get("page_version")
-assert body.get("build_hash") == "e09d72caaf10", body.get("build_hash")
+assert body.get("build_hash") == "c2d0b08b22c2", body.get("build_hash")
 print("page_version=v1.8 build_hash=" + str(body.get("build_hash")))
 PY
 rm -f /tmp/zhiyu-patch-build.json
