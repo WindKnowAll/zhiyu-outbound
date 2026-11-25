@@ -187,13 +187,11 @@ def conversational_override(call: QualificationCall, user_text: str) -> Decision
         return confused_reply(call)
     if any(word in user_text for word in ("再见", "挂了", "不用再说")) and call.identity_confirmed:
         return Decision(speak=GOODBYE, closed=True, result="已知晓")
-    if (
-        call.identity_confirmed
-        and call.disclosed
-        and is_satisfied_close(user_text)
-        and (call.stage == "ending" or _explicit_understanding(user_text))
-    ):
-        return Decision(speak=GOODBYE, closed=True, result="已知晓")
+    if call.identity_confirmed and call.disclosed and is_satisfied_close(user_text):
+        if call.stage == "ending" or _explicit_understanding(user_text):
+            return Decision(speak=GOODBYE, closed=True, result="已知晓", transfer=False)
+        if call.stage == "result":
+            return Decision(speak=RESULT_LINE, result="结果确认")
     if call.identity_confirmed and call.disclosed and is_open_reservation(user_text):
         if is_why_followup(user_text):
             call._why_text = user_text
@@ -644,6 +642,7 @@ _EXPLICIT_UNDERSTANDING = (
     "可以了",
     "行了",
 )
+_FILLERS = ("好吧", "那行", "嗯", "哦", "啊", "呃", "额", "哎", "那", "行")
 _NOISE_GAP = re.compile(r"[\s，。！？、,.!~～…·]+")
 
 
@@ -651,20 +650,37 @@ def _compact_utterance(text: str) -> str:
     return _NOISE_GAP.sub("", text.strip())
 
 
+def _leading_filler(leftover: str) -> str | None:
+    matches = [phrase for phrase in _FILLERS if leftover.startswith(phrase)]
+    if not matches:
+        return None
+    exposing = []
+    for phrase in matches:
+        rest = leftover[len(phrase) :]
+        if any(rest.startswith(word) for word in _UNDERSTAND_WORDS):
+            exposing.append(phrase)
+    if exposing:
+        return max(exposing, key=len)
+    return max(matches, key=len)
+
+
 def _strip_understanding(compact: str) -> str | None:
-    """从句首剥掉听懂用语。剥不动时返回 None。"""
+    """先去掉句首语气，再剥听懂用语。没听到懂了就返回 None。"""
 
     leftover = compact
     stripped = False
-    changed = True
-    while changed and leftover:
-        changed = False
-        for phrase in _UNDERSTAND_WORDS:
-            if leftover.startswith(phrase):
-                leftover = leftover[len(phrase) :]
-                stripped = True
-                changed = True
-                break
+    for _ in range(12):
+        if not leftover:
+            break
+        understood = next((phrase for phrase in _UNDERSTAND_WORDS if leftover.startswith(phrase)), None)
+        if understood is not None:
+            leftover = leftover[len(understood) :]
+            stripped = True
+            continue
+        filler = _leading_filler(leftover)
+        if filler is None:
+            break
+        leftover = leftover[len(filler) :]
     if not stripped:
         return None
     return leftover
@@ -683,7 +699,7 @@ def is_open_reservation(text: str) -> bool:
 
 
 def is_satisfied_close(text: str) -> bool:
-    """已经表示听懂。句末一两个杂字不当成新问题。"""
+    """已经表示听懂。句首语气和句末一两个杂字不当成新问题。"""
 
     compact = _compact_utterance(text)
     if not compact or is_not_understood(compact):

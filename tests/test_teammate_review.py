@@ -65,6 +65,18 @@ def test_review_rejects_audio_secrets_and_treats_empty_provider_as_given():
     saved = validate_review(_sample())
     assert saved["provider_traces"][0]["provider_status"] == "empty"
     assert saved["raw_audio"] is False
+    real = _sample()
+    real["session_id"] = "SmallWebRTCConnection#0-" + "cd" * 16
+    kept = validate_review(real)
+    assert kept["session_id"] == real["session_id"]
+    unsafe = _sample()
+    unsafe["session_id"] = "SmallWebRTCConnection#0/secret"
+    try:
+        validate_review(unsafe)
+    except ReviewRejected as exc:
+        assert "编号" in str(exc)
+    else:
+        raise AssertionError("带斜杠的通话编号不应留下")
 
 
 def test_local_preview_save_export_and_collect_stays_off(tmp_path):

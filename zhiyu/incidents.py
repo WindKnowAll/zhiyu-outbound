@@ -10,7 +10,8 @@ import uuid
 from pathlib import Path
 
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
-_SESSION = re.compile(r"[A-Za-z0-9_.:-]{0,80}")
+# Pipecat 1.15 的 pc_id 是 SmallWebRTCConnection#N-加 32 位十六进制。# 必须留下。
+_SESSION = re.compile(r"[A-Za-z0-9_.:#-]{0,120}")
 _NAME = re.compile(r"[0-9a-f]{32}\.(jpg|png|webp|heic)")
 
 
@@ -80,7 +81,7 @@ def parse_multipart(content_type: str, body: bytes) -> dict[str, tuple[str, byte
 
 def clean_session_id(value: str) -> str:
     text = (value or "").strip()
-    if not _SESSION.fullmatch(text):
+    if ".." in text or not _SESSION.fullmatch(text):
         raise IncidentRejected("通话编号格式不正确。")
     return text
 

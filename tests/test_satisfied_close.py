@@ -43,6 +43,11 @@ def test_trailing_noise_is_still_acknowledgement():
     assert not is_positive_ack("明白了但是还有问题")
     assert not is_satisfied_close("我明白了，为什么")
     assert not is_satisfied_close("我不明白")
+    assert is_satisfied_close("嗯，好吧，我明白了。")
+    assert is_satisfied_close("好吧知道了")
+    assert is_satisfied_close("哦，那行，清楚了")
+    assert not is_satisfied_close("嗯，好吧")
+    assert not is_satisfied_close("嗯，好吧，我明白了但是还有问题")
 
 
 def _confirmed(row: int):
@@ -62,18 +67,29 @@ async def test_understood_with_trailing_noise_closes_without_repeating_reason(tm
     assert first.closed is False
     await hooks.after_turn(TurnRecord("好的", first.speak, False, StageTimings(), []))
     assert call.stage == "ending"
-    for text in ("好的，我明白了。超", "好的我明白了啊", "清楚了。超", "没问题了", "没有了哦", "好的。超"):
+    for text in (
+        "好的，我明白了。超",
+        "好的我明白了啊",
+        "清楚了。超",
+        "没问题了",
+        "没有了哦",
+        "好的。超",
+        "嗯，好吧，我明白了。",
+        "好吧知道了",
+        "哦，那行，清楚了",
+    ):
         decision, _ = resolve_turn(
             call,
             text,
-            '{"intent":"question","reply":"因为类似群不符合。您还有不清楚的吗？"}',
+            '{"intent":"question","reply":"这个情况我帮您记录下来，稍后由审核同事和您进一步确认。"}',
         )
         assert decision.speak == GOODBYE, text
         assert decision.closed is True
         assert decision.result == "已知晓"
+        assert decision.transfer is False
         assert "类似群" not in decision.speak
         assert "还有不清楚的吗" not in decision.speak
-        assert "稍后由审核同事" not in decision.speak
+        assert "审核同事" not in decision.speak
     await hooks.after_turn(TurnRecord("好的，我明白了。超", GOODBYE, False, StageTimings(), []))
     files = list((tmp_path).glob("*.json"))
     assert len(files) == 1
@@ -85,9 +101,37 @@ async def test_understood_with_trailing_noise_closes_without_repeating_reason(tm
 
 def test_acknowledgement_before_result_check_still_uses_the_existing_line():
     call = _confirmed(38)
-    decision, _ = resolve_turn(call, "好的", '{"intent":"ack","reply":"因为类似群不符合。您还有不清楚的吗？"}')
+    decision, _ = resolve_turn(
+        call,
+        "好的",
+        '{"intent":"question","reply":"这个情况我帮您记录下来，稍后由审核同事和您进一步确认。"}',
+    )
     assert decision.speak == RESULT_LINE
     assert decision.closed is False
+    assert "审核同事" not in decision.speak
+
+
+def test_reluctant_understanding_does_not_use_the_fallback():
+    call = _confirmed(38)
+    call.stage = "result"
+    decision, _ = resolve_turn(
+        call,
+        "嗯，好吧，我明白了。",
+        '{"intent":"question","reply":"这个情况我帮您记录下来，稍后由审核同事和您进一步确认。"}',
+    )
+    assert decision.speak == GOODBYE
+    assert decision.closed is True
+    assert decision.result == "已知晓"
+    assert decision.transfer is False
+    assert "审核同事" not in decision.speak
+    stayed, _ = resolve_turn(
+        call,
+        "嗯，好吧，我明白了但是还有问题",
+        '{"intent":"ack","reply":"感谢您的接听，祝您生活愉快，再见！"}',
+    )
+    assert stayed.closed is False
+    assert stayed.speak != GOODBYE
+    assert "审核同事" not in stayed.speak
 
 
 def test_reservation_after_understanding_does_not_end():

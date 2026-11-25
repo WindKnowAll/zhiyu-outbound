@@ -30,10 +30,10 @@ def _app(tmp_path, *, call_token: str = ""):
     )
 
 
-def _ticket(tmp_path, session_id: str) -> None:
+def _ticket(tmp_path, session_id: str, result: str = "未完成") -> None:
     call = new_call()
     call.session_id = session_id
-    call.result = "未完成"
+    call.result = result
     TicketStore(tmp_path / "tickets").write(call.to_ticket(interrupted=False))
 
 
@@ -105,3 +105,42 @@ def test_upload_links_the_mock_ticket_and_rejects_bad_images(tmp_path):
         assert png.status_code == 200
         assert png.json()["ticket_attached"] is False
         assert png.json()["image"] == ""
+
+
+def test_real_pc_id_links_ticket_and_unsafe_ids_are_rejected(tmp_path):
+    session_id = "SmallWebRTCConnection#0-" + "ab" * 16
+    assert len(session_id) <= 120
+    _ticket(tmp_path, session_id)
+    _ticket(tmp_path, "text-abc", result="已知晓")
+    app = _app(tmp_path, call_token=CALL)
+    headers = {"X-Zhiyu-Call-Token": CALL}
+    with TestClient(app) as client:
+        saved = client.post(
+            "/api/incidents",
+            data={"text": "真实通话编号", "call_session_id": session_id},
+            headers=headers,
+        )
+        assert saved.status_code == 200
+        assert saved.json()["ticket_attached"] is True
+        assert saved.json()["call_session_id"] == session_id
+        linked = next(
+            path.read_text(encoding="utf-8")
+            for path in (tmp_path / "tickets").glob("*.json")
+            if session_id in path.read_text(encoding="utf-8")
+        )
+        assert "真实通话编号" in linked
+        text_session = client.post(
+            "/api/incidents",
+            data={"text": "文字调试编号", "call_session_id": "text-abc"},
+            headers=headers,
+        )
+        assert text_session.status_code == 200
+        assert text_session.json()["ticket_attached"] is True
+        for bad in ("../etc/passwd", "a/b", "has space", "a\nb", "a" * 121):
+            rejected = client.post(
+                "/api/incidents",
+                data={"text": "不该收下", "call_session_id": bad},
+                headers=headers,
+            )
+            assert rejected.status_code == 400
+            assert "格式" in rejected.json()["message"]

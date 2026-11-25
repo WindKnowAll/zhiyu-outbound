@@ -13,6 +13,8 @@ import time
 import uuid
 from pathlib import Path
 
+from zhiyu.incidents import IncidentRejected, clean_session_id
+
 SCHEMA = "zhiyu.teammate_review.v1"
 PROVIDER_STATUS = {"success", "empty", "unparsed", "error"}
 EVAL_PROMPTS = (
@@ -84,6 +86,17 @@ def collect_config(
 
 def eval_prompts() -> list[dict]:
     return [dict(item) for item in EVAL_PROMPTS]
+
+
+def _session_id(value: object) -> str:
+    if value is None:
+        value = ""
+    if not isinstance(value, str):
+        raise ReviewRejected("通话编号格式不正确。")
+    try:
+        return clean_session_id(value)
+    except IncidentRejected as exc:
+        raise ReviewRejected("通话编号格式不正确。") from exc
 
 
 def _text(value: object, limit: int) -> str:
@@ -214,7 +227,7 @@ def validate_review(payload: object) -> dict:
             "close_method": _text(str(scenario.get("close_method") or ""), 20),
             "script_complete": bool(scenario.get("script_complete")),
         },
-        "session_id": _text(str(payload.get("session_id") or ""), 80),
+        "session_id": _session_id(payload.get("session_id")),
         "call_link": call_link,
         "idempotency_key": str(idempotency_key),
         "turns": turns,
