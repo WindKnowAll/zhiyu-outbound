@@ -394,6 +394,16 @@ main.home h1 {
 }
 main.home .eyebrow, main.home .lead, main.home .kicker { color: #8fd9cb; }
 main.home .lead { margin: 4px 0 0; font-size: 15px; }
+main.home .page-links { display: none; margin: 8px 0 0; }
+main.home .page-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  background: #3dbea5;
+  color: #04221d;
+  text-decoration: none;
+}
 main.home .kicker { margin: 0; font-size: 12px; letter-spacing: 0.12em; }
 
 main.home .panel {
@@ -480,6 +490,7 @@ main.home .incident-keep {
 }
 main.home .incident-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 main.home .incident-head h3 { margin: 0; white-space: nowrap; }
+main.home .incident-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 main.home .incident-head button { flex: 0 0 auto; }
 main.home #incident-form {
   display: grid;
@@ -514,6 +525,7 @@ main.home #incident-what { min-height: 64px; }
   main.home footer { order: 4; }
   main.home .panel { overflow: visible; margin: 10px; }
   main.home #incident-form { grid-template-columns: 1fr; }
+  main.home .page-links { display: block; }
   main.home .actions { display: grid; grid-template-columns: 1fr 1fr; }
   main.home ol { max-height: 220px; }
 }
@@ -685,4 +697,119 @@ main.debug-page #incident-result { grid-column: 1 / -1; }
   main.debug-page #lines { max-height: 240px; }
   main.debug-page #debug-incident { grid-template-columns: 1fr; }
   main.debug-page .actions { display: grid; grid-template-columns: 1fr 1fr; }
+}
+
+body:has(main.rsi-page) {
+  background: #0c1413;
+  color: #d7efe8;
+  color-scheme: dark;
+}
+
+main.rsi-page {
+  width: min(960px, calc(100% - 24px));
+  max-width: none;
+  margin: 16px auto 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #d7efe8;
+  font-size: 15px;
+  line-height: 1.5;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+main.rsi-page .rail {
+  margin: 0;
+  padding: 16px 8px;
+  border-right: 1px solid #1d3330;
+  writing-mode: vertical-rl;
+  letter-spacing: 0.18em;
+  color: #8fd9cb;
+}
+
+main.rsi-page .stage { display: grid; gap: 12px; padding: 12px; align-content: start; }
+main.rsi-page header { padding-bottom: 8px; border-bottom: 1px solid #1d3330; }
+main.rsi-page h1 {
+  margin: 4px 0 0;
+  font-family: "Sarasa Mono SC", "Noto Sans Mono", ui-monospace, monospace;
+  font-size: 28px;
+  color: #effaf7;
+}
+main.rsi-page .eyebrow, main.rsi-page .lead, main.rsi-page h2, main.rsi-page h3 { color: #8fd9cb; }
+main.rsi-page .lead { font-size: 15px; }
+main.rsi-page .panel {
+  border: 1px solid #23423d;
+  background: #12211f;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+main.rsi-page a.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-right: 8px;
+  padding: 0 12px;
+  border: 1px solid #3dbea5;
+  color: #8fd9cb;
+  text-decoration: none;
+}
+main.rsi-page button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 0;
+  background: #3dbea5;
+  color: #04221d;
+  font-size: 15px;
+}
+main.rsi-page input {
+  width: 100%;
+  min-height: 44px;
+  background-color: #0c1413;
+  color: #effaf7;
+  border: 1px solid #2f6f66;
+  font-size: 15px;
+  color-scheme: dark;
+}
+main.rsi-page ol,
+main.rsi-page ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: none;
+  overflow: visible;
+}
+main.rsi-page li {
+  padding: 10px 12px;
+  border-radius: 0;
+  background: #0c1413;
+  color: #d7efe8;
+}
+main.rsi-page dt { color: #8fd9cb; font-size: 13px; }
+main.rsi-page dd { margin: 4px 0 0; color: #effaf7; }
+main.rsi-page #counts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+main.rsi-page #counts div { padding: 8px; background: #0c1413; }
+main.rsi-page button:focus-visible,
+main.rsi-page input:focus-visible,
+main.rsi-page a:focus-visible {
+  outline: 2px solid #f0d48a;
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  main.rsi-page { grid-template-columns: 1fr; width: min(100% - 16px, 960px); margin: 8px auto 24px; }
+  main.rsi-page .rail {
+    writing-mode: horizontal-tb;
+    letter-spacing: 0.08em;
+    border-right: 0;
+    border-bottom: 1px solid #1d3330;
+  }
+  main.rsi-page h1 { font-size: 24px; }
+  main.rsi-page #counts { grid-template-columns: 1fr; }
 }

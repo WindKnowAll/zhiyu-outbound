@@ -69,6 +69,8 @@ PAGE_FILES = (
     "zhiyu/static/debug.html",
     "zhiyu/static/debug_state.js",
     "zhiyu/static/debug.js",
+    "zhiyu/static/rsi.html",
+    "zhiyu/static/rsi.js",
 )
 
 
@@ -418,6 +420,54 @@ def create_app(
         if not learning_admin or presented != learning_admin or presented == (call_token or ""):
             return JSONResponse(status_code=401, content={"message": "需要管理员令牌。通话口令不能审核。"})
         return None
+
+    def _rsi_incidents() -> list[dict]:
+        rows = []
+        for item in incidents.list_records():
+            session_id = str(item.get("call_session_id") or "")
+            rows.append(
+                {
+                    "id": str(item.get("id") or ""),
+                    "saved_at": str(item.get("saved_at") or ""),
+                    "ticket_attached": bool(item.get("ticket_attached")),
+                    "has_image": bool(item.get("image")),
+                    "source_row": tickets.source_row(session_id),
+                }
+            )
+        return rows
+
+    @app.get("/rsi")
+    async def rsi_page() -> HTMLResponse:
+        page = (STATIC_DIR / "rsi.html").read_text(encoding="utf-8")
+        return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/rsi/overview")
+    async def rsi_overview() -> JSONResponse:
+        from zhiyu.rsi_view import build_overview, public_overview
+
+        payload = build_overview(
+            incidents=incidents.list_records(),
+            reviews=reviews.rsi_rows(),
+            items=learning.list_items(),
+        )
+        return JSONResponse(public_overview(payload))
+
+    @app.get("/api/rsi/detail")
+    async def rsi_detail(request: Request) -> JSONResponse:
+        from zhiyu.rsi_view import detail_incidents, detail_learning, detail_reviews
+
+        denied = _learning_admin(request)
+        if denied is not None:
+            return denied
+        return JSONResponse(
+            {
+                "learning": detail_learning(learning.list_items()),
+                "incidents": detail_incidents(_rsi_incidents()),
+                "reviews": detail_reviews(reviews.rsi_rows()),
+                "model_training": False,
+                "dispatch": "local_only",
+            }
+        )
 
     @app.get("/api/learning")
     async def learning_list(request: Request) -> JSONResponse:

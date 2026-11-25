@@ -292,6 +292,28 @@ class ReviewStore:
                 return item
         return None
 
+    def rsi_rows(self) -> list[dict]:
+        """进化页只用试听记录的时间、场景和是否写了异常说明。不含对白。"""
+
+        rows = []
+        with self._lock:
+            paths = sorted(self.directory.glob("*.json")) if self.directory.is_dir() else []
+            for path in paths:
+                try:
+                    item = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                feedback = item.get("feedback") if isinstance(item.get("feedback"), dict) else {}
+                rows.append(
+                    {
+                        "id": str(item.get("id") or ""),
+                        "saved_at": str(item.get("saved_at") or ""),
+                        "has_incident_note": bool(str((feedback or {}).get("incident") or "").strip()),
+                        "scenario_row": (item.get("scenario") or {}).get("row") if isinstance(item.get("scenario"), dict) else None,
+                    }
+                )
+        return rows
+
     def list_reviews(self, pseudonym: str | None = None) -> list[dict]:
         rows = []
         with self._lock:

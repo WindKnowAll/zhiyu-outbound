@@ -79,6 +79,10 @@ document.getElementById("composer").addEventListener("submit", (event) => {
   sendDraft();
 });
 
+document.getElementById("open-rsi").addEventListener("click", () => {
+  window.location.href = "/rsi";
+});
+
 beginEl.addEventListener("click", () => startSession(false));
 randomEl.addEventListener("click", () => startSession(true));
 endEl.addEventListener("click", finishSession);

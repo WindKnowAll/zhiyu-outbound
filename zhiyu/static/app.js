@@ -479,6 +479,10 @@ document.getElementById("open-debug").addEventListener("click", () => {
   window.location.href = "/debug";
 });
 
+document.getElementById("open-rsi").addEventListener("click", () => {
+  window.location.href = "/rsi";
+});
+
 document.getElementById("pick").addEventListener("click", () => {
   scenarioEl.focus();
   if (typeof scenarioEl.showPicker === "function") {

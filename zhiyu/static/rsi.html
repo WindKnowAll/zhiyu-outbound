@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>智语外呼 · 话术进化</title>
+    <meta name="zhiyu-page" content="v1.8" />
+    <link rel="stylesheet" href="/static/style.css?v=v1.8" />
+  </head>
+  <body>
+    <main class="phone rsi-page">
+      <p class="rail">话术进化</p>
+      <div class="stage">
+        <header>
+          <p class="eyebrow">受限话术的反馈改进 · 不是模型自训练 · 不是京东官方服务</p>
+          <h1>话术进化</h1>
+          <p class="lead">这里只统计已经写在这台机器上的异常、试听记录和话术候选。待审没有启用，不算进化成果。没有提升曲线，也不会自动批准。</p>
+          <p>
+            <a class="back-link" href="/">返回语音首页</a>
+            <a class="back-link" href="/debug">文字调试</a>
+          </p>
+        </header>
+        <p id="banner" class="banner" hidden></p>
+        <section class="panel" aria-label="链路">
+          <h2>真实链路</h2>
+          <ol id="pipeline"></ol>
+          <p id="effective" class="scenario-note"></p>
+        </section>
+        <section class="panel" aria-label="数量">
+          <h2>当前数量</h2>
+          <dl id="counts"></dl>
+          <p class="scenario-note">人工试听记录是复核流水，不是异常。未解决跟进只记在本地，没有外呼派单。</p>
+        </section>
+        <section class="panel" aria-label="明细">
+          <h2>明细</h2>
+          <p class="scenario-note">不登录只能看上面的数量。明细需要管理员令牌。通话口令不能查看，页面也不提供批准按钮。</p>
+          <form id="gate">
+            <label>管理员令牌 <input id="admin-token" type="password" autocomplete="off" /></label>
+            <button id="load-detail" type="submit">查看明细</button>
+          </form>
+          <p id="detail-note" class="scenario-note"></p>
+          <div id="detail"></div>
+        </section>
+      </div>
+    </main>
+    <script src="/static/rsi.js?v=v1.8"></script>
+  </body>
+</html>
