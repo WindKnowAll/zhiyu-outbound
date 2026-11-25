@@ -192,6 +192,12 @@ def conversational_override(call: QualificationCall, user_text: str) -> Decision
             return Decision(speak=GOODBYE, closed=True, result="已知晓", transfer=False)
         if call.stage == "result":
             return Decision(speak=RESULT_LINE, result="结果确认")
+    if call.identity_confirmed and call.disclosed and call.stage in {"result", "ending"}:
+        bare = _bare_answer(_compact_utterance(user_text))
+        if bare in {"没有", "没了"}:
+            return Decision(speak=GOODBYE, closed=True, result="已知晓", transfer=False)
+        if bare in {"嗯", "有"}:
+            return Decision(speak="您具体哪一句不清楚？")
     if call.identity_confirmed and call.disclosed and is_open_reservation(user_text):
         if is_why_followup(user_text):
             call._why_text = user_text
@@ -598,6 +604,8 @@ def is_not_understood(text: str) -> bool:
             "没理解",
             "看不懂",
             "没看懂",
+            "不懂",
+            "不知道",
         )
     )
 
@@ -617,32 +625,24 @@ _RESERVATION_WORDS = (
     "哪个",
     "吗",
 )
-_UNDERSTAND_WORDS = (
-    "没有问题了",
-    "没问题了",
-    "我明白了",
-    "明白了",
-    "我清楚了",
-    "清楚了",
-    "知道了",
-    "没有了",
-    "可以了",
-    "行了",
-    "好的",
-)
 _EXPLICIT_UNDERSTANDING = (
     "没有问题了",
     "没问题了",
+    "没有问题",
+    "没问题",
     "我明白了",
     "明白了",
     "我清楚了",
     "清楚了",
     "知道了",
+    "我懂了",
+    "懂了",
     "没有了",
     "可以了",
     "行了",
 )
-_FILLERS = ("好吧", "那行", "嗯", "哦", "啊", "呃", "额", "哎", "那", "行")
+_SOFT_UNDERSTANDING = ("好的",)
+_FILLERS = ("好吧", "那行", "嗯", "哦", "啊", "呃", "额", "哎", "呀", "哈", "那", "行", "好", "对")
 _NOISE_GAP = re.compile(r"[\s，。！？、,.!~～…·]+")
 
 
@@ -650,69 +650,120 @@ def _compact_utterance(text: str) -> str:
     return _NOISE_GAP.sub("", text.strip())
 
 
-def _leading_filler(leftover: str) -> str | None:
-    matches = [phrase for phrase in _FILLERS if leftover.startswith(phrase)]
-    if not matches:
-        return None
-    exposing = []
-    for phrase in matches:
-        rest = leftover[len(phrase) :]
-        if any(rest.startswith(word) for word in _UNDERSTAND_WORDS):
-            exposing.append(phrase)
-    if exposing:
-        return max(exposing, key=len)
-    return max(matches, key=len)
-
-
-def _strip_understanding(compact: str) -> str | None:
-    """先去掉句首语气，再剥听懂用语。没听到懂了就返回 None。"""
-
-    leftover = compact
-    stripped = False
-    for _ in range(12):
-        if not leftover:
+def _cut_earliest(text: str, phrases: tuple[str, ...], *, skip_negated: bool) -> tuple[int, int] | None:
+    best: tuple[int, int, int] | None = None
+    for phrase in phrases:
+        start = 0
+        while True:
+            at = text.find(phrase, start)
+            if at < 0:
+                break
+            if skip_negated and at > 0 and text[at - 1] in "不没":
+                start = at + 1
+                continue
+            cand = (at, -len(phrase), at + len(phrase))
+            if best is None or cand < best:
+                best = cand
             break
-        understood = next((phrase for phrase in _UNDERSTAND_WORDS if leftover.startswith(phrase)), None)
-        if understood is not None:
-            leftover = leftover[len(understood) :]
-            stripped = True
-            continue
-        filler = _leading_filler(leftover)
-        if filler is None:
-            break
-        leftover = leftover[len(filler) :]
-    if not stripped:
+    if best is None:
         return None
-    return leftover
+    return best[0], best[2]
 
 
-def is_open_reservation(text: str) -> bool:
-    """听懂了但还留着问题。不能当成这通电话可以结束。"""
+def _peel_close(compact: str) -> tuple[str, str]:
+    """从任意位置拿掉听懂用语和语气词。返回 explicit、soft 或 none，以及剩下的字。"""
 
-    compact = _compact_utterance(text)
-    if not compact or is_not_understood(compact):
-        return False
-    leftover = _strip_understanding(compact)
-    if leftover is None:
-        return False
+    work = compact
+    saw_explicit = False
+    saw_soft = False
+    for _ in range(24):
+        if not work:
+            break
+        explicit = _cut_earliest(work, _EXPLICIT_UNDERSTANDING, skip_negated=True)
+        soft = _cut_earliest(work, _SOFT_UNDERSTANDING, skip_negated=False)
+        filler = _cut_earliest(work, _FILLERS, skip_negated=False)
+        options: list[tuple[int, int, str, tuple[int, int]]] = []
+        if explicit is not None:
+            options.append((explicit[0], 0, "explicit", explicit))
+        if soft is not None:
+            options.append((soft[0], 1, "soft", soft))
+        if filler is not None:
+            options.append((filler[0], 2, "filler", filler))
+        if not options:
+            break
+        _, _, kind, span = min(options)
+        if kind == "explicit":
+            saw_explicit = True
+        elif kind == "soft":
+            saw_soft = True
+        work = work[: span[0]] + work[span[1] :]
+    if saw_explicit:
+        return "explicit", work
+    if saw_soft:
+        return "soft", work
+    return "none", work
+
+
+def _has_follow_signal(leftover: str) -> bool:
     return any(word in leftover for word in _RESERVATION_WORDS)
 
 
-def is_satisfied_close(text: str) -> bool:
-    """已经表示听懂。句首语气和句末一两个杂字不当成新问题。"""
+def is_open_reservation(text: str) -> bool:
+    """听懂了但还留着转折或追问。不能当成这通电话可以结束。"""
 
     compact = _compact_utterance(text)
     if not compact or is_not_understood(compact):
         return False
-    leftover = _strip_understanding(compact)
-    if leftover is None or any(word in leftover for word in _RESERVATION_WORDS):
+    kind, leftover = _peel_close(compact)
+    if kind == "none":
+        return False
+    return _has_follow_signal(leftover)
+
+
+def is_satisfied_close(text: str) -> bool:
+    """话里有明确的听懂。语气词在哪都不算，句末一两个杂字也不算。"""
+
+    compact = _compact_utterance(text)
+    if not compact or is_not_understood(compact):
+        return False
+    kind, leftover = _peel_close(compact)
+    if kind == "none" or _has_follow_signal(leftover):
         return False
     return len(leftover) <= 2
 
 
+def _bare_answer(compact: str) -> str | None:
+    """收尾问句之后，只剩没有、没了、嗯或有。旁边的语气词不算。"""
+
+    if compact in {"没有", "没了", "嗯", "有"}:
+        return compact
+    work = compact
+    for _ in range(8):
+        if work in {"没有", "没了", "嗯", "有"}:
+            return work
+        stripped = False
+        for filler in sorted(_FILLERS, key=len, reverse=True):
+            if work.endswith(filler) and len(work) > len(filler):
+                work = work[: -len(filler)]
+                stripped = True
+                break
+            if work.startswith(filler) and len(work) > len(filler):
+                work = work[len(filler) :]
+                stripped = True
+                break
+        if not stripped:
+            break
+    if work in {"没有", "没了", "嗯", "有"}:
+        return work
+    return None
+
+
 def _explicit_understanding(text: str) -> bool:
     compact = _compact_utterance(text)
-    return any(word in compact for word in _EXPLICIT_UNDERSTANDING)
+    if not compact or is_not_understood(compact):
+        return False
+    kind, leftover = _peel_close(compact)
+    return kind == "explicit" and not _has_follow_signal(leftover) and len(leftover) <= 2
 
 
 def is_positive_ack(text: str) -> bool:
